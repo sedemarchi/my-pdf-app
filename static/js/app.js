@@ -159,26 +159,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Auto-Print Toggle Mode Handling
     function updateAutoPrintUI(isOn) {
+        const iconModeTool = document.getElementById('icon-mode-tool');
+        const iconModePrint = document.getElementById('icon-mode-print');
+        const destBadge = document.getElementById('dest-badge');
+        const destIcon = document.getElementById('dest-icon');
+
         if (isOn) {
-            if (quickPrintPanel) quickPrintPanel.classList.add('active');
-            if (printModeStatus) {
-                printModeStatus.className = 'badge-status badge-on';
-                printModeStatus.textContent = 'ON';
+            if (iconModeTool) iconModeTool.classList.remove('tool-active');
+            if (iconModePrint) iconModePrint.classList.add('print-active');
+            if (quickPrintPanel) quickPrintPanel.classList.remove('hidden');
+            if (dropZone) {
+                dropZone.classList.add('print-mode');
+                dropZone.title = 'PDF・画像をドロップして即時印刷（クリックで選択）';
             }
-            if (dropZone) dropZone.classList.add('print-mode');
-            if (dropIcon) dropIcon.className = 'fa-solid fa-print drop-icon';
+            if (destBadge) {
+                destBadge.className = 'flow-badge badge-dest-print';
+                destBadge.title = '即時印刷';
+            }
+            if (destIcon) destIcon.className = 'fa-solid fa-print';
             if (dropTitle) dropTitle.textContent = 'PDFを即印刷';
-            if (dropPrintBadge) dropPrintBadge.classList.remove('hidden');
         } else {
+            if (iconModeTool) iconModeTool.classList.add('tool-active');
+            if (iconModePrint) iconModePrint.classList.remove('print-active');
             if (quickPrintPanel) quickPrintPanel.classList.add('hidden');
-            if (printModeStatus) {
-                printModeStatus.className = 'badge-status badge-off';
-                printModeStatus.textContent = 'OFF';
+            if (dropZone) {
+                dropZone.classList.remove('print-mode');
+                dropZone.title = 'PDF・画像をドロップして結合・圧縮（クリックで選択）';
             }
-            if (dropZone) dropZone.classList.remove('print-mode');
-            if (dropIcon) dropIcon.className = 'fa-solid fa-cloud-arrow-up drop-icon';
+            if (destBadge) {
+                destBadge.className = 'flow-badge badge-dest-tool';
+                destBadge.title = '結合・圧縮PDF';
+            }
+            if (destIcon) destIcon.className = 'fa-solid fa-file-zipper';
             if (dropTitle) dropTitle.textContent = 'PDFをドロップ';
-            if (dropPrintBadge) dropPrintBadge.classList.add('hidden');
         }
     }
 
@@ -193,9 +206,9 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('localpdf_auto_print', isChecked);
             updateAutoPrintUI(isChecked);
             if (isChecked) {
-                showToast("⚡ ドロップ即時印刷モードが有効になりました。PDFを投げ込むと直ちに印刷されます。", "print", 4000);
+                showToast("⚡ 即時印刷ON", "print", 2000);
             } else {
-                showToast("ドロップ即時印刷モードをOFFにしました。", "info", 2500);
+                showToast("🛠️ ツールモードON", "info", 2000);
             }
         });
     }

@@ -4,30 +4,30 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local iLovePDF - 万能ツール</title>
-    <link rel="stylesheet" href="css/style.css?v=6.1">
+    <link rel="stylesheet" href="css/style.css?v=7.0">
     <link rel="icon" type="image/png" href="favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="widget-body">
-    <!-- Slim Compact Header (Takes only ~28px, fits Google Sites iframe) -->
+    <!-- Slim Ultra-Minimal Header (Takes only ~28px) -->
     <header class="compact-header">
-        <div class="logo">
+        <div class="logo" title="Local PDF/Image Tools">
             <img src="favicon.png" alt="Logo" class="logo-icon">
-            <span class="logo-title">PDFツール</span>
         </div>
 
         <div class="header-right-controls">
-            <!-- Mode Toggle: PDF Tools vs Auto-Print -->
-            <label class="mode-toggle-wrap" title="投げ込み即時印刷モード">
+            <!-- Mode Toggle: Tools vs Auto-Print (Iconographic) -->
+            <label class="mode-toggle-wrap" title="モード切替: ツール ⇄ 即時印刷">
+                <i class="fa-solid fa-file-zipper mode-indicator-icon tool-active" id="icon-mode-tool" title="PDFツールモード"></i>
                 <input type="checkbox" id="auto-print-toggle">
                 <span class="slider round"></span>
-                <span class="toggle-text"><i class="fa-solid fa-print"></i> 即印刷</span>
+                <i class="fa-solid fa-print mode-indicator-icon" id="icon-mode-print" title="即時印刷モード"></i>
             </label>
 
             <!-- Print Settings Inline (Shown only when Print Mode is ON) -->
             <div id="quick-print-panel" class="quick-print-inline hidden">
-                <select id="printer-select" class="select-compact">
+                <select id="printer-select" class="select-compact" title="プリンター選択">
                     <option value="">プリンター取得中...</option>
                 </select>
             </div>
@@ -35,14 +35,37 @@
     </header>
 
     <main class="widget-main">
-        <!-- 1. The Immediate Drop Zone (Visible by default, zero scrollbar needed) -->
-        <div id="drop-zone" class="widget-drop-zone">
-            <i class="fa-solid fa-cloud-arrow-up drop-icon" id="drop-icon"></i>
-            <h2 id="drop-title">PDFをドロップ</h2>
-            <button type="button" class="btn-select-file" id="file-select-btn">ファイルを選択</button>
-            <div id="drop-print-badge" class="drop-print-badge hidden">
-                <i class="fa-solid fa-print"></i> 即印刷
+        <!-- 1. The Immediate Drop Zone (Infographic Flow, Zero Text) -->
+        <div id="drop-zone" class="widget-drop-zone" title="PDF・画像をドロップして結合・圧縮（クリックで選択）">
+            <!-- Dynamic Infographic Flow -->
+            <div class="infographic-flow">
+                <div class="flow-sources">
+                    <div class="flow-badge badge-pdf" title="PDF">
+                        <i class="fa-solid fa-file-pdf"></i>
+                    </div>
+                    <span class="flow-op"><i class="fa-solid fa-plus"></i></span>
+                    <div class="flow-badge badge-img" title="画像 (JPG/PNG/WebP)">
+                        <i class="fa-solid fa-image"></i>
+                    </div>
+                </div>
+
+                <div class="flow-arrow">
+                    <i class="fa-solid fa-arrow-right-long arrow-pulse"></i>
+                </div>
+
+                <div class="flow-dest">
+                    <div class="flow-badge badge-dest-tool" id="dest-badge" title="結合・圧縮PDF">
+                        <i class="fa-solid fa-file-zipper" id="dest-icon"></i>
+                    </div>
+                </div>
             </div>
+
+            <!-- Micro Folder-Plus Button -->
+            <button type="button" class="btn-icon-upload" id="file-select-btn" title="ファイルを選択">
+                <i class="fa-solid fa-folder-open"></i>
+                <i class="fa-solid fa-plus" style="font-size:0.6rem;"></i>
+            </button>
+
             <input type="file" id="file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff" style="display: none;">
         </div>
 
@@ -51,16 +74,16 @@
             <!-- Top compact info bar -->
             <div class="action-top-bar">
                 <div class="top-bar-left">
-                    <span id="file-count" class="badge-count">0 ファイル</span>
+                    <span id="file-count" class="badge-count" title="ファイル数"><i class="fa-solid fa-layer-group"></i> 0</span>
                     <div class="sort-toolbar-mini">
-                        <button id="sort-date-btn" class="btn-mini btn-outline" title="スキャン日時順"><i class="fa-solid fa-clock"></i> 日時順</button>
-                        <button id="sort-name-btn" class="btn-mini btn-outline" title="ファイル名順"><i class="fa-solid fa-arrow-down-a-z"></i> 名前順</button>
+                        <button id="sort-date-btn" class="btn-mini btn-outline" title="スキャン日時順"><i class="fa-solid fa-clock"></i></button>
+                        <button id="sort-name-btn" class="btn-mini btn-outline" title="ファイル名順"><i class="fa-solid fa-arrow-down-a-z"></i></button>
                     </div>
                 </div>
 
                 <div class="top-bar-right">
-                    <button id="add-more-btn" class="btn-mini btn-outline"><i class="fa-solid fa-plus"></i> 追加</button>
-                    <button id="clear-all-btn" class="btn-mini btn-danger-outline"><i class="fa-solid fa-xmark"></i> やり直す</button>
+                    <button id="add-more-btn" class="btn-mini btn-outline" title="追加"><i class="fa-solid fa-plus"></i></button>
+                    <button id="clear-all-btn" class="btn-mini btn-danger-outline" title="やり直す"><i class="fa-solid fa-trash-can"></i></button>
                 </div>
             </div>
 
@@ -71,60 +94,42 @@
 
             <!-- Output filename (compact inline) -->
             <div class="output-filename-compact" id="output-filename-box">
-                <label for="output-filename-input"><i class="fa-solid fa-wand-magic-sparkles"></i> 出力保存名:</label>
-                <input type="text" id="output-filename-input" class="input-filename-compact" placeholder="出力ファイル名..." />
-                <button type="button" id="suggest-name-btn" class="btn-mini btn-outline" title="再解析"><i class="fa-solid fa-wand-magic-sparkles"></i> 再解析</button>
+                <i class="fa-solid fa-wand-magic-sparkles" title="出力ファイル名"></i>
+                <input type="text" id="output-filename-input" class="input-filename-compact" placeholder="Output..." />
+                <button type="button" id="suggest-name-btn" class="btn-mini btn-outline" title="再解析"><i class="fa-solid fa-arrows-rotate"></i></button>
             </div>
 
-            <!-- The Big Action Selection Tiles (ユーザーの求める「投げ込むと選ぶ選択肢が出る」) -->
+            <!-- The Action Selection Tiles (Iconographic Minimal) -->
             <div class="action-tiles-container">
                 <div class="action-tiles-grid">
                     <button type="button" class="action-tile-btn primary-tile" data-op="merge_compress" title="結合して圧縮（一番おすすめ）">
                         <i class="fa-solid fa-file-zipper tile-icon"></i>
-                        <div class="tile-text">
-                            <span class="tile-title">結合して圧縮</span>
-                            <span class="tile-desc">人気・自動軽量化</span>
-                        </div>
+                        <span class="tile-title">結合＋圧縮</span>
                     </button>
 
                     <button type="button" class="action-tile-btn" data-op="compress" title="個別圧縮">
                         <i class="fa-solid fa-compress tile-icon"></i>
-                        <div class="tile-text">
-                            <span class="tile-title">個別圧縮</span>
-                            <span class="tile-desc">サイズ削減</span>
-                        </div>
+                        <span class="tile-title">圧縮</span>
                     </button>
 
                     <button type="button" class="action-tile-btn" data-op="merge" title="結合のみ（無圧縮）">
                         <i class="fa-solid fa-object-group tile-icon"></i>
-                        <div class="tile-text">
-                            <span class="tile-title">結合のみ</span>
-                            <span class="tile-desc">画質維持</span>
-                        </div>
+                        <span class="tile-title">結合</span>
                     </button>
 
                     <button type="button" class="action-tile-btn" data-op="split" title="1ページずつ分割">
                         <i class="fa-solid fa-scissors tile-icon"></i>
-                        <div class="tile-text">
-                            <span class="tile-title">ページ分割</span>
-                            <span class="tile-desc">ZIP出力</span>
-                        </div>
+                        <span class="tile-title">分割</span>
                     </button>
 
                     <button type="button" class="action-tile-btn" data-op="to_png" title="PNG画像に変換">
                         <i class="fa-solid fa-image tile-icon"></i>
-                        <div class="tile-text">
-                            <span class="tile-title">画像変換</span>
-                            <span class="tile-desc">高画質PNG</span>
-                        </div>
+                        <span class="tile-title">画像化</span>
                     </button>
 
                     <button type="button" class="action-tile-btn" data-op="unlock" title="パスワード解除">
                         <i class="fa-solid fa-lock-open tile-icon"></i>
-                        <div class="tile-text">
-                            <span class="tile-title">ロック解除</span>
-                            <span class="tile-desc">パスワード削除</span>
-                        </div>
+                        <span class="tile-title">解除</span>
                     </button>
                 </div>
             </div>
