@@ -203,37 +203,32 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial printer fetch
     fetchPrinters();
 
-    // Navigation buttons handle
-    const navBtns = document.querySelectorAll('.nav-btn');
-    navBtns.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
+    // Action tile buttons: Select operation and execute immediately
+    const actionTileBtns = document.querySelectorAll('.action-tile-btn');
+    actionTileBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
             const op = btn.getAttribute('data-op');
             if (op && operationSelect) {
                 operationSelect.value = op;
-                navBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                handleOperationChange();
+                actionTileBtns.forEach(b => b.classList.remove('primary-tile'));
+                btn.classList.add('primary-tile');
+                executeProcess();
             }
         });
     });
 
+    const clearAllBtn = document.getElementById('clear-all-btn');
+    if (clearAllBtn) {
+        clearAllBtn.addEventListener('click', removeAllFiles);
+    }
+
     function handleOperationChange() {
         const op = operationSelect ? operationSelect.value : 'merge_compress';
-        // Sync active nav button
-        navBtns.forEach(b => {
-            if (b.getAttribute('data-op') === op) b.classList.add('active');
-            else b.classList.remove('active');
+        actionTileBtns.forEach(b => {
+            if (b.getAttribute('data-op') === op) b.classList.add('primary-tile');
+            else b.classList.remove('primary-tile');
         });
-
-        if (op === 'print') {
-            if (outputFilenameBox) outputFilenameBox.style.display = 'none';
-            if (processBtn) processBtn.innerHTML = '🖨️ 印刷を実行 <i class="fa-solid fa-arrow-right"></i>';
-        } else {
-            if (outputFilenameBox) outputFilenameBox.style.display = '';
-            if (processBtn) processBtn.innerHTML = '処理を開始 <i class="fa-solid fa-arrow-right"></i>';
-            updateSuggestedFilename();
-        }
+        updateSuggestedFilename();
     }
 
     if (operationSelect) {
@@ -564,8 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dropZone.classList.add('hidden');
             fileListContainer.classList.remove('hidden');
             
-            fileCount.innerHTML = `${files.length} ファイル <button id="clear-all-btn" class="btn btn-sm btn-danger-outline" style="margin-left:8px;" title="全てのファイルを消去"><i class="fa-solid fa-trash-can"></i> 全消去</button>`;
-            document.getElementById('clear-all-btn').addEventListener('click', removeAllFiles);
+            fileCount.textContent = `${files.length} ファイル`;
 
             fileList.innerHTML = '';
             
@@ -581,24 +575,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const thumbContent = f.thumbnail_base64 
                     ? `<img src="${f.thumbnail_base64}" class="thumb-img" alt="Thumbnail" />` 
-                    : `<i class="fa-solid ${hasPassword ? 'fa-file-circle-check' : 'fa-file-pdf'}" style="font-size:3rem; color:#e5322d;"></i>`;
+                    : `<i class="fa-solid ${hasPassword ? 'fa-file-circle-check' : 'fa-file-pdf'}" style="font-size:2rem; color:#e5322d;"></i>`;
 
                 card.innerHTML = `
                     <button class="remove-file" data-id="${f.id}" title="削除"><i class="fa-solid fa-xmark"></i></button>
                     <div class="file-thumbnail-container" data-id="${f.id}">
                         ${thumbContent}
-                        <div class="thumb-zoom-overlay"><i class="fa-solid fa-magnifying-glass-plus"></i> 拡大して確認</div>
+                        <div class="thumb-zoom-overlay"><i class="fa-solid fa-magnifying-glass-plus"></i></div>
                         <span class="page-badge">${pageCountStr}</span>
                     </div>
-                    <div class="file-name" title="${f.original_name}">${f.original_name}</div>
-                    <div class="file-size">${formatSize(f.size)} ${hasPassword ? '🔑PW済' : ''}</div>
-                    ${scanTimeStr ? `<div class="scan-time-badge" title="スキャン/作成日時">${scanTimeStr}</div>` : ''}
-                    <div class="card-controls">
-                        <div class="reorder-btns">
-                            <button class="btn-nano move-left-btn" title="左へ移動" ${idx === 0 ? 'disabled' : ''}><i class="fa-solid fa-chevron-left"></i></button>
-                            <button class="btn-nano move-right-btn" title="右へ移動" ${idx === files.length - 1 ? 'disabled' : ''}><i class="fa-solid fa-chevron-right"></i></button>
-                        </div>
-                        <span style="font-size:0.75rem; color:#888;">#${idx + 1}</span>
+                    <div class="card-info">
+                        <div class="file-name" title="${f.original_name}">${f.original_name}</div>
+                        <div class="file-size">${formatSize(f.size)} ${hasPassword ? '🔑' : ''}</div>
+                        ${scanTimeStr ? `<div class="scan-time-badge">${scanTimeStr}</div>` : ''}
                     </div>
                 `;
 
