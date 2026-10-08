@@ -167,17 +167,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (dropZone) dropZone.classList.add('print-mode');
             if (dropIcon) dropIcon.className = 'fa-solid fa-print drop-icon';
-            if (dropTitle) dropTitle.textContent = 'PDFをドロップして即時印刷';
+            if (dropTitle) dropTitle.textContent = 'PDFをドロップして即印刷';
             if (dropPrintBadge) dropPrintBadge.classList.remove('hidden');
         } else {
-            if (quickPrintPanel) quickPrintPanel.classList.remove('active');
+            if (quickPrintPanel) quickPrintPanel.classList.add('hidden');
             if (printModeStatus) {
                 printModeStatus.className = 'badge-status badge-off';
                 printModeStatus.textContent = 'OFF';
             }
             if (dropZone) dropZone.classList.remove('print-mode');
             if (dropIcon) dropIcon.className = 'fa-solid fa-cloud-arrow-up drop-icon';
-            if (dropTitle) dropTitle.textContent = 'ここにPDFファイルをドロップ';
+            if (dropTitle) dropTitle.textContent = 'PDFをドロップ';
             if (dropPrintBadge) dropPrintBadge.classList.add('hidden');
         }
     }
