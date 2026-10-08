@@ -251,9 +251,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Thumbnail Zoom & Grid Layout Controls
     // ==========================================
     function setThumbnailSize(size) {
-        size = Math.max(90, Math.min(280, parseInt(size, 10) || 145));
+        size = Math.max(110, Math.min(320, parseInt(size, 10) || 175));
         document.documentElement.style.setProperty('--card-width', `${size}px`);
-        const thumbH = Math.round(size * 0.85);
+        document.documentElement.style.setProperty('--card-min-width', `${size}px`);
+        const thumbH = Math.round(size * 0.72);
         document.documentElement.style.setProperty('--thumb-height', `${thumbH}px`);
         if (thumbSizeSlider) thumbSizeSlider.value = size;
         localStorage.setItem('localpdf_thumb_size', size);
@@ -282,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (savedThumbSize) {
         setThumbnailSize(savedThumbSize);
     } else {
-        setThumbnailSize(145);
+        setThumbnailSize(175);
     }
 
     const savedGridMode = localStorage.getItem('localpdf_grid_mode');
@@ -297,13 +298,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (btnThumbSmaller) {
         btnThumbSmaller.addEventListener('click', () => {
-            const cur = parseInt(thumbSizeSlider ? thumbSizeSlider.value : 145, 10);
+            const cur = parseInt(thumbSizeSlider ? thumbSizeSlider.value : 175, 10);
             setThumbnailSize(cur - 20);
         });
     }
     if (btnThumbLarger) {
         btnThumbLarger.addEventListener('click', () => {
-            const cur = parseInt(thumbSizeSlider ? thumbSizeSlider.value : 145, 10);
+            const cur = parseInt(thumbSizeSlider ? thumbSizeSlider.value : 175, 10);
             setThumbnailSize(cur + 20);
         });
     }
@@ -892,7 +893,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function savePdfWithPicker(downloadUrl, filename) {
+    async function savePdfWithPicker(downloadUrl, filename, resultId = null, preferPopup = false) {
+        // 1. If running inside an iframe (e.g. Google Sites) or preferPopup is requested:
+        // Use top-level popup /save.html where showSaveFilePicker is NOT blocked by iframe permissions policy!
+        if ((window.self !== window.top || preferPopup) && resultId) {
+            try {
+                const popup = window.open(
+                    `/save.html?id=${encodeURIComponent(resultId)}&name=${encodeURIComponent(filename)}`,
+                    'SavePdfWindow',
+                    'width=520,height=440,menubar=no,toolbar=no,location=no,status=no'
+                );
+                if (popup) {
+                    showToast('📂 保存先選択ウィンドウを開きました', 'info', 4000);
+                    return true;
+                }
+            } catch (popupErr) {
+                console.warn('Popup window blocked or failed:', popupErr);
+            }
+        }
+
+        // 2. Try native showSaveFilePicker in top-level window
         try {
             if ('showSaveFilePicker' in window) {
                 const options = {
@@ -923,14 +943,14 @@ document.addEventListener('DOMContentLoaded', () => {
             console.warn('showSaveFilePicker fallback:', err);
         }
 
-        // Fallback for standard browsers
+        // 3. Fallback for standard browsers
         const a = document.createElement('a');
         a.href = downloadUrl;
         a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        showToast(`✅ 保存開始: ${filename}`, 'success', 4000);
+        showToast(`✅ ダウンロード開始: ${filename}`, 'success', 4000);
         return true;
     }
 
@@ -1003,7 +1023,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     showToast(`✅ ${data.filename} を作成しました`, "success", 4000);
                     try {
-                        await savePdfWithPicker(data.download_url, data.filename);
+                        await savePdfWithPicker(data.download_url, data.filename, data.result_id, false);
                     } catch (pe) {
                         console.debug('Save picker auto prompt:', pe);
                     }
@@ -1047,6 +1067,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const statsDisplay = document.getElementById('result-stats-display');
         const locationDisplay = document.getElementById('result-location-display');
         const reopenPreviewBtn = document.getElementById('btn-reopen-preview');
+        const resultSaveAsBtn = document.getElementById('btn-result-save-as');
         const resultDownloadBtn = document.getElementById('btn-result-download');
         const resultNewBtn = document.getElementById('btn-result-new');
 
@@ -1076,9 +1097,21 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }
 
+        if (resultSaveAsBtn) {
+            resultSaveAsBtn.onclick = () => {
+                savePdfWithPicker(data.download_url, data.filename, data.result_id, true);
+            };
+        }
+
         if (resultDownloadBtn) {
             resultDownloadBtn.onclick = () => {
-                savePdfWithPicker(data.download_url, data.filename);
+                const a = document.createElement('a');
+                a.href = data.download_url;
+                a.download = data.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                showToast(`✅ ダウンロード開始: ${data.filename}`, 'success', 4000);
             };
         }
 

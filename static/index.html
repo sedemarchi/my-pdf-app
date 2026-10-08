@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local iLovePDF - 万能ツール</title>
-    <link rel="stylesheet" href="css/style.css?v=9.0">
+    <link rel="stylesheet" href="css/style.css?v=10.0">
     <link rel="icon" type="image/png" href="favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -85,7 +85,7 @@
 
                 <div class="thumb-zoom-toolbar" id="thumb-zoom-toolbar" title="サムネイル拡大・表示切替">
                     <button type="button" id="btn-thumb-smaller" class="btn-mini btn-outline" title="サムネイルを縮小"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
-                    <input type="range" id="thumb-size-slider" min="90" max="280" value="145" step="5" class="slider-thumb-size" title="サムネイルサイズ調整" />
+                    <input type="range" id="thumb-size-slider" min="110" max="320" value="175" step="5" class="slider-thumb-size" title="サムネイルサイズ調整" />
                     <button type="button" id="btn-thumb-larger" class="btn-mini btn-outline" title="サムネイルを拡大"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
                     <button type="button" id="btn-toggle-grid" class="btn-mini btn-outline active-grid" title="グリッド展開 ⇄ 1行スクロール切替"><i class="fa-solid fa-table-cells-large"></i></button>
                 </div>
@@ -137,8 +137,11 @@
                 <div class="result-location hidden" id="result-location-display"></div>
             </div>
             <div class="result-actions">
-                <button type="button" class="btn-result-download" id="btn-result-download" title="ファイルを保存">
-                    <i class="fa-solid fa-download"></i> 保存
+                <button type="button" class="btn-result-save-as" id="btn-result-save-as" title="保存先フォルダを選択して保存">
+                    <i class="fa-solid fa-folder-open"></i> 名前を付けて保存
+                </button>
+                <button type="button" class="btn-result-download" id="btn-result-download" title="ダウンロードフォルダに直接保存">
+                    <i class="fa-solid fa-download"></i> ダウンロード
                 </button>
                 <button type="button" class="btn-result-preview" id="btn-reopen-preview" title="プレビューを別ウィンドウで確認">
                     <i class="fa-solid fa-arrow-up-right-from-square"></i> プレビュー
@@ -206,6 +209,6 @@
     </main>
 
     <div id="toast-container" class="toast-container"></div>
-    <script src="js/app.js?v=9.0"></script>
+    <script src="js/app.js?v=10.0"></script>
 </body>
 </html>

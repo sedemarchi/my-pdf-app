@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>名前を付けて保存 - Local iLovePDF</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; }
+        body {
+            background: #f8fafc;
+            color: #1e293b;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+            text-align: center;
+        }
+        .save-card {
+            background: #ffffff;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 28px 24px;
+            max-width: 460px;
+            width: 100%;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        }
+        .save-icon {
+            font-size: 2.6rem;
+            color: #059669;
+            margin-bottom: 14px;
+        }
+        .file-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #0f172a;
+            word-break: break-all;
+            margin-bottom: 8px;
+        }
+        .save-hint {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-bottom: 22px;
+            line-height: 1.5;
+        }
+        .btn-save-as {
+            background: #059669;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            justify-content: center;
+            transition: all 0.15s;
+            box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25);
+        }
+        .btn-save-as:hover {
+            background: #047857;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(5, 150, 105, 0.35);
+        }
+        .btn-direct-dl {
+            background: #f8fafc;
+            color: #64748b;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 9px 16px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 12px;
+            width: 100%;
+            transition: all 0.15s;
+        }
+        .btn-direct-dl:hover {
+            background: #f1f5f9;
+            color: #1e293b;
+            border-color: #94a3b8;
+        }
+        .status-msg {
+            margin-top: 16px;
+            font-size: 0.88rem;
+            font-weight: 600;
+        }
+        .status-success { color: #10b981; }
+        .status-error { color: #ef4444; }
+    </style>
+</head>
+<body>
+    <div class="save-card">
+        <i class="fa-solid fa-folder-open save-icon"></i>
+        <div class="file-title" id="filename-display">PDFを保存中...</div>
+        <p class="save-hint">下のボタンをクリックして、ドラッグ＆ドロップ元の作業フォルダや任意の保存先を選択してください。</p>
+
+        <button type="button" class="btn-save-as" id="btn-save-picker" autofocus>
+            <i class="fa-solid fa-folder-open"></i> 保存先フォルダを選択して保存
+        </button>
+
+        <button type="button" class="btn-direct-dl" id="btn-fallback-dl">
+            <i class="fa-solid fa-download"></i> ダウンロードフォルダへ直接保存
+        </button>
+
+        <div id="status-display" class="status-msg"></div>
+    </div>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const resultId = params.get('id');
+        const filename = params.get('name') || 'output.pdf';
+        const downloadUrl = `/api/download-result/${resultId}`;
+
+        const filenameDisplay = document.getElementById('filename-display');
+        const btnSavePicker = document.getElementById('btn-save-picker');
+        const btnFallbackDl = document.getElementById('btn-fallback-dl');
+        const statusDisplay = document.getElementById('status-display');
+
+        if (filenameDisplay) filenameDisplay.textContent = filename;
+
+        async function triggerSavePicker() {
+            statusDisplay.textContent = '';
+            statusDisplay.className = 'status-msg';
+
+            try {
+                if ('showSaveFilePicker' in window) {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: filename,
+                        types: [{
+                            description: 'PDF Documents (*.pdf)',
+                            accept: { 'application/pdf': ['.pdf'] }
+                        }]
+                    });
+
+                    statusDisplay.textContent = 'ファイルを保存中...';
+                    const writable = await handle.createWritable();
+                    const res = await fetch(downloadUrl);
+                    const blob = await res.blob();
+                    await writable.write(blob);
+                    await writable.close();
+
+                    statusDisplay.className = 'status-msg status-success';
+                    statusDisplay.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${handle.name} に保存完了しました！`;
+
+                    setTimeout(() => {
+                        window.close();
+                    }, 1500);
+                    return;
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    statusDisplay.textContent = '保存がキャンセルされました。';
+                    return;
+                }
+                console.warn('showSaveFilePicker failed:', err);
+                statusDisplay.className = 'status-msg status-error';
+                statusDisplay.textContent = `保存エラー: ${err.message || err}`;
+            }
+
+            // Fallback to standard download if showSaveFilePicker not supported
+            doDirectDownload();
+        }
+
+        function doDirectDownload() {
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            statusDisplay.className = 'status-msg status-success';
+            statusDisplay.textContent = 'ダウンロードフォルダへ保存を開始しました。';
+            setTimeout(() => {
+                window.close();
+            }, 2000);
+        }
+
+        btnSavePicker.addEventListener('click', triggerSavePicker);
+        btnFallbackDl.addEventListener('click', doDirectDownload);
+    </script>
+</body>
+</html>
