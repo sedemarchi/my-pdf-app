@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local iLovePDF - 万能ツール</title>
-    <link rel="stylesheet" href="css/style.css?v=7.0">
+    <link rel="stylesheet" href="css/style.css?v=8.0">
     <link rel="icon" type="image/png" href="favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -69,83 +69,56 @@
             <input type="file" id="file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff" style="display: none;">
         </div>
 
-        <!-- 2. Action Panel (Revealed immediately when file(s) are dropped!) -->
+        <!-- 2. Page Thumbnail Workbench (Revealed immediately when file(s) are dropped!) -->
         <div id="file-list-container" class="file-action-container hidden">
-            <!-- Top compact info bar -->
-            <div class="action-top-bar">
-                <div class="top-bar-left">
-                    <span id="file-count" class="badge-count" title="ファイル数"><i class="fa-solid fa-layer-group"></i> 0</span>
-                    <div class="sort-toolbar-mini">
-                        <button id="sort-date-btn" class="btn-mini btn-outline" title="スキャン日時順"><i class="fa-solid fa-clock"></i></button>
-                        <button id="sort-name-btn" class="btn-mini btn-outline" title="ファイル名順"><i class="fa-solid fa-arrow-down-a-z"></i></button>
+            <!-- Compact 1-line Action & Toolbar -->
+            <div class="workbench-toolbar">
+                <div class="toolbar-left">
+                    <span id="page-count-badge" class="badge-count" title="総ページ数"><i class="fa-solid fa-file-lines"></i> 0 P</span>
+                    
+                    <div class="output-filename-compact" id="output-filename-box">
+                        <i class="fa-solid fa-wand-magic-sparkles" title="出力ファイル名"></i>
+                        <input type="text" id="output-filename-input" class="input-filename-compact" placeholder="Output..." />
+                        <button type="button" id="suggest-name-btn" class="btn-mini btn-outline" title="タイトル再生成"><i class="fa-solid fa-arrows-rotate"></i></button>
                     </div>
                 </div>
 
-                <div class="top-bar-right">
-                    <button id="add-more-btn" class="btn-mini btn-outline" title="追加"><i class="fa-solid fa-plus"></i></button>
-                    <button id="clear-all-btn" class="btn-mini btn-danger-outline" title="やり直す"><i class="fa-solid fa-trash-can"></i></button>
-                </div>
-            </div>
-
-            <!-- Compact Thumbnails / Horizontal File List -->
-            <div id="file-list" class="file-list-horizontal">
-                <!-- Cards injected by JS -->
-            </div>
-
-            <!-- Output filename (compact inline) -->
-            <div class="output-filename-compact" id="output-filename-box">
-                <i class="fa-solid fa-wand-magic-sparkles" title="出力ファイル名"></i>
-                <input type="text" id="output-filename-input" class="input-filename-compact" placeholder="Output..." />
-                <button type="button" id="suggest-name-btn" class="btn-mini btn-outline" title="再解析"><i class="fa-solid fa-arrows-rotate"></i></button>
-            </div>
-
-            <!-- The Action Selection Tiles (Iconographic Minimal) -->
-            <div class="action-tiles-container">
-                <div class="action-tiles-grid">
-                    <button type="button" class="action-tile-btn primary-tile" data-op="merge_compress" title="結合して圧縮（一番おすすめ）">
-                        <i class="fa-solid fa-file-zipper tile-icon"></i>
-                        <span class="tile-title">結合＋圧縮</span>
+                <div class="toolbar-right">
+                    <!-- Direct Assembly Actions -->
+                    <button type="button" id="btn-assemble-compress" class="btn-action-primary" title="全ページを並び順どおり結合して圧縮保存">
+                        <i class="fa-solid fa-file-zipper"></i> 結合・圧縮
+                    </button>
+                    <button type="button" id="btn-assemble-merge" class="btn-action-secondary" title="全ページを無圧縮で結合保存">
+                        <i class="fa-solid fa-object-group"></i> 結合のみ
+                    </button>
+                    <button type="button" id="btn-assemble-print" class="btn-action-print" title="現在の並び順で即座に印刷">
+                        <i class="fa-solid fa-print"></i> 印刷
                     </button>
 
-                    <button type="button" class="action-tile-btn" data-op="compress" title="個別圧縮">
-                        <i class="fa-solid fa-compress tile-icon"></i>
-                        <span class="tile-title">圧縮</span>
+                    <button type="button" id="add-more-btn" class="btn-mini btn-outline" title="新規ページ（PDF・画像）を挿入・追加">
+                        <i class="fa-solid fa-plus"></i> 追加
                     </button>
-
-                    <button type="button" class="action-tile-btn" data-op="merge" title="結合のみ（無圧縮）">
-                        <i class="fa-solid fa-object-group tile-icon"></i>
-                        <span class="tile-title">結合</span>
-                    </button>
-
-                    <button type="button" class="action-tile-btn" data-op="split" title="1ページずつ分割">
-                        <i class="fa-solid fa-scissors tile-icon"></i>
-                        <span class="tile-title">分割</span>
-                    </button>
-
-                    <button type="button" class="action-tile-btn" data-op="to_png" title="PNG画像に変換">
-                        <i class="fa-solid fa-image tile-icon"></i>
-                        <span class="tile-title">画像化</span>
-                    </button>
-
-                    <button type="button" class="action-tile-btn" data-op="unlock" title="パスワード解除">
-                        <i class="fa-solid fa-lock-open tile-icon"></i>
-                        <span class="tile-title">解除</span>
+                    <button type="button" id="clear-all-btn" class="btn-mini btn-danger-outline" title="すべてやり直す">
+                        <i class="fa-solid fa-trash-can"></i>
                     </button>
                 </div>
+            </div>
+
+            <!-- Page Thumbnails Strip / Canvas (Reorder, Rotate, Delete) -->
+            <div id="page-thumbnail-canvas" class="page-thumbnail-canvas">
+                <!-- Page Cards & Insert Card injected dynamically by JS -->
             </div>
 
             <!-- Hidden controls for JS backward compatibility -->
+            <div id="file-list" style="display: none;"></div>
             <select id="operation-select" style="display: none;">
-                <option value="merge_compress">結合して圧縮（ロック自動解除）</option>
-                <option value="compress">個別にPDF圧縮</option>
-                <option value="unlock">PDFのロック解除のみ</option>
-                <option value="merge">PDFを結合のみ（無圧縮）</option>
-                <option value="split">PDFを分割</option>
-                <option value="to_jpg">JPG画像に変換</option>
-                <option value="to_png">PNG画像に変換（高画質）</option>
-                <option value="print">🖨️ PDFを印刷（プリンター出力）</option>
+                <option value="merge_compress" selected>結合・圧縮</option>
+                <option value="merge">結合のみ</option>
+                <option value="compress">圧縮</option>
+                <option value="print">印刷</option>
             </select>
             <button id="process-btn" style="display: none;"></button>
+            <span id="file-count" style="display: none;"></span>
         </div>
 
         <!-- 3. Result Preview & Action Card (Shown after processing) -->
@@ -156,11 +129,14 @@
                 <div class="result-stats" id="result-stats-display">-- ページ • -- KB</div>
             </div>
             <div class="result-actions">
+                <button type="button" class="btn-result-download" id="btn-result-download" title="ファイルを保存">
+                    <i class="fa-solid fa-download"></i> 保存
+                </button>
                 <button type="button" class="btn-result-preview" id="btn-reopen-preview" title="プレビューを別ウィンドウで確認">
                     <i class="fa-solid fa-arrow-up-right-from-square"></i> プレビュー
                 </button>
-                <button type="button" class="btn-result-download" id="btn-result-download" title="ファイルを保存">
-                    <i class="fa-solid fa-download"></i> 保存
+                <button type="button" class="btn-result-back" id="btn-result-back" title="ページの並び替え・編集に戻る">
+                    <i class="fa-solid fa-arrow-left"></i> 編集に戻る
                 </button>
             </div>
             <button type="button" class="btn-result-new" id="btn-result-new" title="新しい作業を開始">
@@ -222,6 +198,6 @@
     </main>
 
     <div id="toast-container" class="toast-container"></div>
-    <script src="js/app.js?v=5.0"></script>
+    <script src="js/app.js?v=8.0"></script>
 </body>
 </html>

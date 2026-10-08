@@ -34,6 +34,28 @@ import uvicorn
 
 # Global state to store initialized files from sys.argv
 # and uploaded files during the session.
+class PageItem(BaseModel):
+    page_id: str
+    file_id: str
+    page_index: int
+    page_num: int
+    thumbnail: str
+    source_name: str
+    rotation: int = 0
+
+class PageSpec(BaseModel):
+    file_id: str
+    page_index: int
+    rotation: Optional[int] = 0
+
+class AssembleRequest(BaseModel):
+    pages: List[PageSpec]
+    operation: Optional[str] = "merge_compress" # "merge_compress", "merge", "print"
+    output_filename: Optional[str] = None
+    passwords: Optional[Dict[str, str]] = None
+    printer_name: Optional[str] = None
+    copies: Optional[int] = 1
+
 class FileItem(BaseModel):
     id: str
     original_name: str
@@ -44,6 +66,7 @@ class FileItem(BaseModel):
     timestamp: float = 0.0
     thumbnail_base64: str = ""
     is_encrypted: bool = False
+    pages: List[PageItem] = []
 
 class ProcessRequest(BaseModel):
     file_ids: List[str]
@@ -196,6 +219,31 @@ async def upload_file(file: UploadFile = File(...)):
 
     meta_info = get_pdf_metadata_info(temp_path)
     
+    pages_list = []
+    try:
+        doc = fitz.open(temp_path)
+        if not (doc.is_encrypted and not doc.authenticate("")):
+            for p_idx in range(len(doc)):
+                try:
+                    p = doc[p_idx]
+                    pix = p.get_pixmap(dpi=50) # fast 50 DPI thumbnail
+                    img_bytes = pix.tobytes("jpeg", jpg_quality=70)
+                    b64_str = "data:image/jpeg;base64," + base64.b64encode(img_bytes).decode("utf-8")
+                    pages_list.append(PageItem(
+                        page_id=f"{file_id}_p{p_idx}",
+                        file_id=file_id,
+                        page_index=p_idx,
+                        page_num=p_idx + 1,
+                        thumbnail=b64_str,
+                        source_name=file.filename,
+                        rotation=0
+                    ))
+                except Exception as ep:
+                    print(f"Error rendering page {p_idx}: {ep}")
+        doc.close()
+    except Exception as e:
+        print(f"Error extracting pages from {temp_path}: {e}")
+
     item = FileItem(
         id=file_id,
         original_name=file.filename,
@@ -205,7 +253,8 @@ async def upload_file(file: UploadFile = File(...)):
         scan_time_str=meta_info["scan_time_str"],
         timestamp=meta_info["timestamp"],
         thumbnail_base64=meta_info["thumbnail_base64"],
-        is_encrypted=meta_info["is_encrypted"]
+        is_encrypted=meta_info["is_encrypted"],
+        pages=pages_list
     )
     session_files[file_id] = item
     return item
@@ -1043,6 +1092,115 @@ def get_result_info(result_id: str):
         "is_zip": item["is_zip"],
         "page_count": page_count,
         "download_url": f"/api/download-result/{result_id}"
+    }
+
+@app.post("/api/assemble")
+async def assemble_pages(request: AssembleRequest):
+    if not request.pages:
+        raise HTTPException(status_code=400, detail="ページが選択されていません")
+
+    output_id = str(uuid.uuid4())
+    passwords = request.passwords or {}
+    out_path = None
+    
+    # 1. Open and unlock source documents (cached)
+    opened_docs = {}
+    source_items = []
+    try:
+        for p in request.pages:
+            if p.file_id not in session_files:
+                raise HTTPException(status_code=404, detail=f"ファイルが見つかりません (ID: {p.file_id})")
+            if p.file_id not in opened_docs:
+                item = session_files[p.file_id]
+                source_items.append(item)
+                pwd = passwords.get(p.file_id)
+                doc = open_and_unlock_pdf(item.temp_path, password=pwd, original_name=item.original_name)
+                opened_docs[p.file_id] = doc
+
+        # 2. Assemble new document
+        assembled_doc = fitz.open()
+        for p in request.pages:
+            src_doc = opened_docs[p.file_id]
+            if p.page_index < 0 or p.page_index >= len(src_doc):
+                continue
+            assembled_doc.insert_pdf(src_doc, from_page=p.page_index, to_page=p.page_index)
+            if p.rotation and (p.rotation % 360) != 0:
+                cur_page = assembled_doc[-1]
+                cur_page.set_rotation((cur_page.rotation + p.rotation) % 360)
+
+        if len(assembled_doc) == 0:
+            assembled_doc.close()
+            raise HTTPException(status_code=400, detail="出力するページがありません")
+
+        # 3. If printing
+        if request.operation == "print":
+            temp_print_path = os.path.join(TEMP_DIR, f"{output_id}_print.pdf")
+            assembled_doc.save(temp_print_path)
+            assembled_doc.close()
+            try:
+                printer = request.printer_name or get_default_printer_name()
+                print_file_to_printer(temp_print_path, printer, copies=request.copies or 1)
+                return {
+                    "status": "success",
+                    "message": f"{len(request.pages)}ページを「{printer or '既定プリンター'}」へ印刷送信しました"
+                }
+            finally:
+                try:
+                    if os.path.exists(temp_print_path):
+                        os.remove(temp_print_path)
+                except Exception:
+                    pass
+
+        # 4. Determine output filename
+        raw_name = request.output_filename.strip() if request.output_filename else suggest_merged_filename(source_items, operation=request.operation or "merge_compress")
+        clean_base = re.sub(r'\.(pdf|zip)$', '', raw_name, flags=re.IGNORECASE).strip()
+        if request.operation in ("merge_compress", "compress"):
+            if not clean_base.upper().endswith("_COMP"):
+                clean_base += "_COMP"
+        else:
+            clean_base = re.sub(r'_COMP$', '', clean_base, flags=re.IGNORECASE)
+        out_filename = clean_base + ".pdf"
+
+        # 5. Save output file
+        if request.operation in ("merge_compress", "compress"):
+            out_path = os.path.join(TEMP_DIR, f"{output_id}_assembled_comp.pdf")
+            compress_doc_to_target_size(assembled_doc, out_path)
+        else:
+            out_path = os.path.join(TEMP_DIR, f"{output_id}_assembled.pdf")
+            assembled_doc.save(out_path)
+
+        assembled_doc.close()
+
+    finally:
+        for doc in opened_docs.values():
+            try:
+                doc.close()
+            except Exception:
+                pass
+
+    if not out_path or not os.path.exists(out_path):
+        raise HTTPException(status_code=500, detail="出力ファイルの保存に失敗しました")
+
+    size = os.path.getsize(out_path)
+    page_count = len(request.pages)
+    session_results[output_id] = {
+        "id": output_id,
+        "path": out_path,
+        "filename": out_filename,
+        "size": size,
+        "is_zip": False,
+        "timestamp": time.time()
+    }
+
+    return {
+        "status": "success",
+        "result_id": output_id,
+        "filename": out_filename,
+        "size": size,
+        "page_count": page_count,
+        "is_zip": False,
+        "preview_url": f"/viewer.html?id={output_id}",
+        "download_url": f"/api/download-result/{output_id}"
     }
 
 

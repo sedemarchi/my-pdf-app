@@ -10,11 +10,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileList = document.getElementById('file-list');
     const fileCount = document.getElementById('file-count');
     const addMoreBtn = document.getElementById('add-more-btn');
+    const clearAllBtn = document.getElementById('clear-all-btn');
     const loadingOverlay = document.getElementById('loading-overlay');
     const processBtn = document.getElementById('process-btn');
     const operationSelect = document.getElementById('operation-select');
     const outputFilenameInput = document.getElementById('output-filename-input');
     const outputFilenameBox = document.getElementById('output-filename-box');
+
+    // Page Workbench Elements
+    const pageThumbnailCanvas = document.getElementById('page-thumbnail-canvas');
+    const pageCountBadge = document.getElementById('page-count-badge');
+    const btnAssembleCompress = document.getElementById('btn-assemble-compress');
+    const btnAssembleMerge = document.getElementById('btn-assemble-merge');
+    const btnAssemblePrint = document.getElementById('btn-assemble-print');
+    const btnResultBack = document.getElementById('btn-result-back');
 
     // Quick Auto-Print Panel Elements
     const quickPrintPanel = document.getElementById('quick-print-panel');
@@ -52,11 +61,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalCancelBtn = document.getElementById('modal-cancel-btn');
     const modalSubmitBtn = document.getElementById('modal-submit-btn');
 
-    let files = []; // [{id, original_name, size, page_count, scan_time_str, timestamp, thumbnail_base64}]
+    let files = []; // [{id, original_name, size, page_count, scan_time_str, timestamp, thumbnail_base64, pages}]
+    let pages = []; // [{ page_id, file_id, page_index, page_num, thumbnail, source_name, rotation }]
     let filePasswords = {}; // { file_id: "password" }
     let currentLockedFileId = null;
     let pendingDirectPrintFiles = null; // Store files for retry if password needed during direct print
-    let hasProcessed = false; // Tracks if previous operation completed (for auto-clearing next drop)
+    let hasProcessed = false; // Tracks if previous operation completed
+    let draggedPageIndex = null;
 
     // Preview state
     let previewFile = null;
@@ -216,37 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial printer fetch
     fetchPrinters();
 
-    // Action tile buttons: Select operation and execute immediately
-    const actionTileBtns = document.querySelectorAll('.action-tile-btn');
-    actionTileBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const op = btn.getAttribute('data-op');
-            if (op && operationSelect) {
-                operationSelect.value = op;
-                actionTileBtns.forEach(b => b.classList.remove('primary-tile'));
-                btn.classList.add('primary-tile');
-                executeProcess();
-            }
-        });
-    });
 
-    const clearAllBtn = document.getElementById('clear-all-btn');
-    if (clearAllBtn) {
-        clearAllBtn.addEventListener('click', removeAllFiles);
-    }
-
-    function handleOperationChange() {
-        const op = operationSelect ? operationSelect.value : 'merge_compress';
-        actionTileBtns.forEach(b => {
-            if (b.getAttribute('data-op') === op) b.classList.add('primary-tile');
-            else b.classList.remove('primary-tile');
-        });
-        updateSuggestedFilename();
-    }
-
-    if (operationSelect) {
-        operationSelect.addEventListener('change', handleOperationChange);
-    }
 
 
     // Check if opened via file:// protocol directly
@@ -265,7 +246,33 @@ document.addEventListener('DOMContentLoaded', () => {
             const initialFiles = await res.json();
             if (initialFiles.length > 0) {
                 files = initialFiles;
-                updateUI();
+                pages = [];
+                initialFiles.forEach(item => {
+                    if (item.pages && item.pages.length > 0) {
+                        item.pages.forEach(p => {
+                            pages.push({
+                                page_id: p.page_id,
+                                file_id: item.id,
+                                page_index: p.page_index,
+                                page_num: p.page_num,
+                                thumbnail: p.thumbnail,
+                                source_name: item.original_name,
+                                rotation: 0
+                            });
+                        });
+                    } else {
+                        pages.push({
+                            page_id: item.id + '_p0',
+                            file_id: item.id,
+                            page_index: 0,
+                            page_num: 1,
+                            thumbnail: item.thumbnail_base64 || '',
+                            source_name: item.original_name,
+                            rotation: 0
+                        });
+                    }
+                });
+                renderPageCards();
             }
         } catch (e) {
             console.error("Failed to fetch initial files", e);
@@ -335,9 +342,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     async function handleFiles(newFiles) {
-        // If previous job was completed, auto-clear old files for a clean slate
         if (hasProcessed) {
             files = [];
+            pages = [];
             filePasswords = {};
             hasProcessed = false;
         }
@@ -359,15 +366,41 @@ document.addEventListener('DOMContentLoaded', () => {
             if (uploadedItem) newlyUploaded.push(uploadedItem);
         }
         showLoading(false);
-        
-        // Auto-print check: If autoPrintToggle is ON, immediately print!
-        if (autoPrintToggle && autoPrintToggle.checked && newlyUploaded.length > 0) {
-            await executeDirectPrint(newlyUploaded);
+
+        // Flatten each page from uploaded files into pages array
+        newlyUploaded.forEach(item => {
+            if (item.pages && item.pages.length > 0) {
+                item.pages.forEach(p => {
+                    pages.push({
+                        page_id: p.page_id,
+                        file_id: item.id,
+                        page_index: p.page_index,
+                        page_num: p.page_num,
+                        thumbnail: p.thumbnail,
+                        source_name: item.original_name,
+                        rotation: 0
+                    });
+                });
+            } else {
+                pages.push({
+                    page_id: item.id + '_p0',
+                    file_id: item.id,
+                    page_index: 0,
+                    page_num: 1,
+                    thumbnail: item.thumbnail_base64 || '',
+                    source_name: item.original_name,
+                    rotation: 0
+                });
+            }
+        });
+
+        // Auto-print mode check
+        if (autoPrintToggle && autoPrintToggle.checked && pages.length > 0) {
+            await assemblePages('print');
             return;
         }
 
-        // Auto-sort by scan time on new batch arrival
-        sortFilesByDate();
+        renderPageCards();
     }
 
     async function uploadFile(file) {
@@ -393,138 +426,222 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function executeDirectPrint(batchFiles) {
-        if (!batchFiles || batchFiles.length === 0) return;
-        pendingDirectPrintFiles = batchFiles;
-        
-        showLoading(true);
-        const printerName = printerSelect ? printerSelect.value : "";
-        const copies = printCopiesInput ? parseInt(printCopiesInput.value, 10) || 1 : 1;
-        const mergeBeforePrint = printMergeCheck ? printMergeCheck.checked : true;
-
-        showToast(`🖨️ ${batchFiles.length}件のPDFを「${printerName || '既定プリンター'}」へ印刷送信中...`, "print", 4000);
-
-        try {
-            const requestBody = {
-                file_ids: batchFiles.map(f => f.id),
-                printer_name: printerName,
-                copies: copies,
-                merge_before_print: mergeBeforePrint,
-                passwords: filePasswords
-            };
-
-            const res = await fetch('/api/print', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (res.status === 422) {
-                const errorData = await res.json();
-                const detail = errorData.detail;
-                if (detail && detail.error_code === "PASSWORD_REQUIRED") {
-                    showLoading(false);
-                    const matchedFile = batchFiles.find(f => f.original_name === detail.filename);
-                    const fileId = matchedFile ? matchedFile.id : batchFiles[0].id;
-                    showPasswordModal(detail.filename, fileId);
-                    return;
-                }
-            }
-
-            if (!res.ok) {
-                const error = await res.json();
-                let msg = "印刷中にエラーが発生しました";
-                if (typeof error.detail === 'string') msg = error.detail;
-                else if (error.detail && error.detail.message) msg = error.detail.message;
-                throw new Error(msg);
-            }
-
-            const data = await res.json();
-            showToast(`✅ ${data.message}`, "success", 7000);
-
-            // Clear files to be ready for next drop
-            files = [];
-            filePasswords = {};
-            pendingDirectPrintFiles = null;
-            updateUI();
-
-        } catch (e) {
-            console.error("Direct print failed", e);
-            showToast(`❌ 印刷失敗: ${e.message}`, "error", 7000);
-            alert(`印刷エラー: ${e.message}`);
-        } finally {
-            showLoading(false);
-        }
-    }
-
-
-    async function removeFile(id) {
-        try {
-            await fetch(`/api/files/${id}`, { method: 'DELETE' });
-            files = files.filter(f => f.id !== id);
-            delete filePasswords[id];
-            updateUI();
-        } catch (e) {
-            console.error("Delete failed", e);
-        }
-    }
-
     function removeAllFiles() {
         files.forEach(f => {
             fetch(`/api/files/${f.id}`, { method: 'DELETE' }).catch(() => {});
         });
         files = [];
+        pages = [];
         filePasswords = {};
         hasProcessed = false;
         const resultCard = document.getElementById('process-result-card');
         if (resultCard) resultCard.classList.add('hidden');
-        updateUI();
+        renderPageCards();
     }
 
-    function moveFile(index, direction) {
-        const newIndex = index + direction;
-        if (newIndex < 0 || newIndex >= files.length) return;
-        const temp = files[index];
-        files[index] = files[newIndex];
-        files[newIndex] = temp;
-        updateUI();
+    function movePage(index, direction) {
+        const target = index + direction;
+        if (target < 0 || target >= pages.length) return;
+        const temp = pages[index];
+        pages[index] = pages[target];
+        pages[target] = temp;
+        renderPageCards();
     }
 
-    // Smart Sort implementations
-    function sortFilesByDate() {
-        files.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-        updateUI();
+    function rotatePage(index) {
+        if (!pages[index]) return;
+        pages[index].rotation = ((pages[index].rotation || 0) + 90) % 360;
+        renderPageCards();
     }
 
-    function sortFilesByName() {
-        files.sort((a, b) => a.original_name.localeCompare(b.original_name, undefined, { numeric: true, sensitivity: 'base' }));
-        updateUI();
+    function deletePage(index) {
+        if (index < 0 || index >= pages.length) return;
+        pages.splice(index, 1);
+        if (pages.length === 0) {
+            removeAllFiles();
+        } else {
+            renderPageCards();
+        }
     }
 
-    function reverseFiles() {
-        files.reverse();
-        updateUI();
+    // Render Page Thumbnail Workbench Cards
+    function renderPageCards() {
+        if (pages.length === 0) {
+            dropZone.classList.remove('hidden');
+            fileListContainer.classList.add('hidden');
+            if (fileInput) fileInput.value = '';
+            return;
+        }
+
+        dropZone.classList.add('hidden');
+        fileListContainer.classList.remove('hidden');
+
+        if (pageCountBadge) {
+            pageCountBadge.innerHTML = `<i class="fa-solid fa-file-lines"></i> ${pages.length} P`;
+        }
+
+        if (!pageThumbnailCanvas) return;
+        pageThumbnailCanvas.innerHTML = '';
+
+        pages.forEach((page, idx) => {
+            const card = document.createElement('div');
+            card.className = 'page-card';
+            card.draggable = true;
+            card.dataset.index = idx;
+
+            const rot = page.rotation || 0;
+            const thumbContent = page.thumbnail 
+                ? `<img src="${page.thumbnail}" class="page-thumb-img" style="transform: rotate(${rot}deg);" alt="Page ${idx + 1}" />` 
+                : `<i class="fa-solid fa-file-pdf" style="font-size:1.8rem; color:#e5322d;"></i>`;
+
+            card.innerHTML = `
+                <div class="page-card-header">
+                    <span class="page-seq-badge">#${idx + 1}</span>
+                    <button type="button" class="btn-page-delete" title="このページを削除"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="page-thumb-wrapper" title="クリックで拡大表示">
+                    ${thumbContent}
+                </div>
+                <div class="page-card-footer">
+                    <button type="button" class="btn-page-move-left" ${idx === 0 ? 'disabled style="opacity:0.35;cursor:default;"' : ''} title="左へ移動"><i class="fa-solid fa-chevron-left"></i></button>
+                    <button type="button" class="btn-page-rotate" title="90度回転"><i class="fa-solid fa-rotate-right"></i></button>
+                    <button type="button" class="btn-page-move-right" ${idx === pages.length - 1 ? 'disabled style="opacity:0.35;cursor:default;"' : ''} title="右へ移動"><i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+                <div class="page-source-info" title="${page.source_name} (p.${page.page_index + 1})">
+                    ${page.source_name}
+                </div>
+            `;
+
+            // Delete listener
+            card.querySelector('.btn-page-delete').addEventListener('click', (e) => {
+                e.stopPropagation();
+                deletePage(idx);
+            });
+
+            // Move Left
+            const btnLeft = card.querySelector('.btn-page-move-left');
+            if (idx > 0) {
+                btnLeft.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    movePage(idx, -1);
+                });
+            }
+
+            // Move Right
+            const btnRight = card.querySelector('.btn-page-move-right');
+            if (idx < pages.length - 1) {
+                btnRight.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    movePage(idx, 1);
+                });
+            }
+
+            // Rotate
+            card.querySelector('.btn-page-rotate').addEventListener('click', (e) => {
+                e.stopPropagation();
+                rotatePage(idx);
+            });
+
+            // Thumbnail Zoom Modal
+            card.querySelector('.page-thumb-wrapper').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const matchedFile = files.find(f => f.id === page.file_id);
+                if (matchedFile) {
+                    openPreviewModalForPage(matchedFile, page.page_index + 1);
+                }
+            });
+
+            // HTML5 Drag & Drop Card Reordering
+            card.addEventListener('dragstart', (e) => {
+                draggedPageIndex = idx;
+                card.classList.add('dragging');
+                e.dataTransfer.setData('text/plain', idx);
+                e.dataTransfer.effectAllowed = 'move';
+            });
+
+            card.addEventListener('dragend', () => {
+                card.classList.remove('dragging');
+                draggedPageIndex = null;
+                document.querySelectorAll('.page-card').forEach(c => c.classList.remove('drag-over'));
+            });
+
+            card.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                card.classList.add('drag-over');
+            });
+
+            card.addEventListener('dragleave', () => {
+                card.classList.remove('drag-over');
+            });
+
+            card.addEventListener('drop', (e) => {
+                e.preventDefault();
+                card.classList.remove('drag-over');
+                const fromIdx = draggedPageIndex !== null ? draggedPageIndex : parseInt(e.dataTransfer.getData('text/plain'), 10);
+                const toIdx = idx;
+                if (!isNaN(fromIdx) && fromIdx !== toIdx) {
+                    const moved = pages.splice(fromIdx, 1)[0];
+                    pages.splice(toIdx, 0, moved);
+                    renderPageCards();
+                }
+            });
+
+            pageThumbnailCanvas.appendChild(card);
+        });
+
+        // Add / Insert Page Card at End
+        const addCard = document.createElement('div');
+        addCard.className = 'page-card-add';
+        addCard.id = 'card-insert-page';
+        addCard.title = 'クリックまたはPDF/画像をドロップしてページを追加';
+        addCard.innerHTML = `
+            <div class="add-card-content">
+                <i class="fa-solid fa-plus-circle add-card-icon"></i>
+                <span class="add-card-text">ページ挿入</span>
+            </div>
+        `;
+
+        addCard.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        addCard.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            addCard.classList.add('drag-over');
+        });
+
+        addCard.addEventListener('dragleave', () => {
+            addCard.classList.remove('drag-over');
+        });
+
+        addCard.addEventListener('drop', (e) => {
+            e.preventDefault();
+            addCard.classList.remove('drag-over');
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleFiles(e.dataTransfer.files);
+            }
+        });
+
+        pageThumbnailCanvas.appendChild(addCard);
+
+        updateSuggestedFilename();
     }
 
-    if (sortDateBtn) sortDateBtn.addEventListener('click', sortFilesByDate);
-    if (sortNameBtn) sortNameBtn.addEventListener('click', sortFilesByName);
-    if (sortReverseBtn) sortReverseBtn.addEventListener('click', reverseFiles);
-
-    const suggestNameBtn = document.getElementById('suggest-name-btn');
-
+    // Auto-suggested Filename
     async function updateSuggestedFilename() {
-        if (!outputFilenameInput || files.length === 0) {
+        if (!outputFilenameInput || pages.length === 0) {
             if (outputFilenameInput) outputFilenameInput.value = '';
             return;
         }
-        const currentOp = operationSelect ? operationSelect.value : 'merge';
         try {
+            const uniqueFileIds = [...new Set(pages.map(p => p.file_id))];
             const res = await fetch('/api/suggest-filename', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    file_ids: files.map(f => f.id),
-                    operation: currentOp
+                    file_ids: uniqueFileIds,
+                    operation: 'merge_compress'
                 })
             });
             if (res.ok) {
@@ -535,35 +652,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } catch (e) {
-            console.error("Failed to suggest filename from server", e);
+            console.warn("Failed to suggest filename", e);
         }
-        outputFilenameInput.value = suggestOutputFilenameFallback();
+
+        const firstName = pages[0].source_name.replace(/\.[^/.]+$/, "");
+        outputFilenameInput.value = `${firstName}_COMP.pdf`;
     }
 
+    const suggestNameBtn = document.getElementById('suggest-name-btn');
     if (suggestNameBtn) {
         suggestNameBtn.addEventListener('click', updateSuggestedFilename);
     }
-
-    function suggestOutputFilenameFallback() {
-        if (files.length === 0) return '';
-        const names = files.map(f => f.original_name.replace(/\.[^/.]+$/, ""));
-        let prefix = names[0];
-        for (let i = 1; i < names.length; i++) {
-            while (!names[i].startsWith(prefix) && prefix.length > 0) {
-                prefix = prefix.substring(0, prefix.length - 1);
-            }
-        }
-        prefix = prefix.trim().replace(/[_-]+$/, "");
-        let base = prefix && prefix.length >= 2 ? prefix : names[0];
-        base = base.replace(/_COMP$/i, "");
-        let suffix = files.length > 1 ? "_結合" : "";
-        const op = operationSelect ? operationSelect.value : 'merge';
-        let compSuffix = (op === 'merge_compress' || op === 'compress') ? "_COMP" : "";
-        const ext = (op === 'to_jpg' || op === 'to_png' || op === 'split') ? '.zip' : '.pdf';
-        return base + suffix + compSuffix + ext;
-    }
-
-    operationSelect.addEventListener('change', updateSuggestedFilename);
 
     function formatSize(bytes) {
         if (bytes === 0) return '0 Bytes';
@@ -573,109 +672,13 @@ document.addEventListener('DOMContentLoaded', () => {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
-    function updateUI() {
-        if (files.length > 0) {
-            dropZone.classList.add('hidden');
-            fileListContainer.classList.remove('hidden');
-            
-            fileCount.textContent = `${files.length} ファイル`;
-
-            fileList.innerHTML = '';
-            
-            files.forEach((f, idx) => {
-                const card = document.createElement('div');
-                card.className = 'file-card';
-                card.draggable = true;
-                card.dataset.index = idx;
-
-                const hasPassword = !!filePasswords[f.id];
-                const pageCountStr = f.page_count ? `全 ${f.page_count} ページ` : 'PDF';
-                const scanTimeStr = f.scan_time_str ? `🕒 ${f.scan_time_str}` : '';
-
-                const thumbContent = f.thumbnail_base64 
-                    ? `<img src="${f.thumbnail_base64}" class="thumb-img" alt="Thumbnail" />` 
-                    : `<i class="fa-solid ${hasPassword ? 'fa-file-circle-check' : 'fa-file-pdf'}" style="font-size:2rem; color:#e5322d;"></i>`;
-
-                card.innerHTML = `
-                    <button class="remove-file" data-id="${f.id}" title="削除"><i class="fa-solid fa-xmark"></i></button>
-                    <div class="file-thumbnail-container" data-id="${f.id}">
-                        ${thumbContent}
-                        <div class="thumb-zoom-overlay"><i class="fa-solid fa-magnifying-glass-plus"></i></div>
-                        <span class="page-badge">${pageCountStr}</span>
-                    </div>
-                    <div class="card-info">
-                        <div class="file-name" title="${f.original_name}">${f.original_name}</div>
-                        <div class="file-size">${formatSize(f.size)} ${hasPassword ? '🔑' : ''}</div>
-                        ${scanTimeStr ? `<div class="scan-time-badge">${scanTimeStr}</div>` : ''}
-                    </div>
-                `;
-
-                // Remove button listener
-                card.querySelector('.remove-file').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    removeFile(f.id);
-                });
-
-                // Thumbnail click -> Open Zoom Modal
-                card.querySelector('.file-thumbnail-container').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openPreviewModal(f);
-                });
-
-                // Reorder button listeners
-                card.querySelector('.move-left-btn').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    moveFile(idx, -1);
-                });
-
-                card.querySelector('.move-right-btn').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    moveFile(idx, 1);
-                });
-
-                // Drag & Drop Card Reordering
-                card.addEventListener('dragstart', (e) => {
-                    card.classList.add('dragging');
-                    e.dataTransfer.setData('text/plain', idx);
-                });
-
-                card.addEventListener('dragend', () => {
-                    card.classList.remove('dragging');
-                });
-
-                card.addEventListener('dragover', (e) => {
-                    e.preventDefault();
-                });
-
-                card.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
-                    const toIdx = idx;
-                    if (!isNaN(fromIdx) && fromIdx !== toIdx) {
-                        const moved = files.splice(fromIdx, 1)[0];
-                        files.splice(toIdx, 0, moved);
-                        updateUI();
-                    }
-                });
-
-                fileList.appendChild(card);
-            });
-
-            updateSuggestedFilename();
-        } else {
-            dropZone.classList.remove('hidden');
-            fileListContainer.classList.add('hidden');
-            fileInput.value = '';
-        }
-    }
-
     // High-Res Zoom Preview Modal Logic
-    function openPreviewModal(fileItem) {
+    function openPreviewModalForPage(fileItem, pageNum) {
         previewFile = fileItem;
-        previewCurrentPage = 1;
+        previewCurrentPage = pageNum || 1;
         previewZoomLevel = 1.0;
         
-        previewFilename.textContent = fileItem.original_name;
+        previewFilename.textContent = `${fileItem.original_name} (p.${previewCurrentPage})`;
         previewModal.classList.remove('hidden');
         renderPreviewPage();
     }
@@ -793,180 +796,110 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pwd && currentLockedFileId) {
             filePasswords[currentLockedFileId] = pwd;
             hidePasswordModal();
-            updateUI();
-            if (pendingDirectPrintFiles && pendingDirectPrintFiles.length > 0) {
-                executeDirectPrint(pendingDirectPrintFiles);
-            } else {
-                executeProcess();
-            }
+            assemblePages('merge_compress');
         } else {
             alert("パスワードを入力してください");
         }
     }
 
-    processBtn.addEventListener('click', () => {
-        if (files.length === 0) {
-            alert("ファイルを追加してください。");
+    // Assemble and Execute Action (Merge Compress, Merge, Print)
+    async function assemblePages(operation = 'merge_compress') {
+        if (pages.length === 0) {
+            alert("ページがありません。ファイルを追加してください。");
             return;
         }
-        
-        const operation = operationSelect.value;
-        if (operation === 'split' && files.length > 1) {
-            alert("分割機能は1ファイルずつしか処理できません。");
-            return;
-        }
-        
-        executeProcess();
-    });
 
-    async function executeProcess() {
         showLoading(true);
-        const operation = operationSelect.value;
+        const printerName = printerSelect ? printerSelect.value : "";
+        const copies = printCopiesInput ? parseInt(printCopiesInput.value, 10) || 1 : 1;
         const customFilename = outputFilenameInput ? outputFilenameInput.value.trim() : '';
 
-        // Handling Print operation directly
         if (operation === 'print') {
-            const printerName = printerSelect ? printerSelect.value : "";
-            const copies = printCopiesInput ? parseInt(printCopiesInput.value, 10) || 1 : 1;
-            const mergeBeforePrint = printMergeCheck ? printMergeCheck.checked : true;
-
-            showToast(`🖨️ ${files.length}件のPDFを「${printerName || '既定プリンター'}」へ印刷送信中...`, "print", 4000);
-
-            try {
-                const requestBody = {
-                    file_ids: files.map(f => f.id),
-                    printer_name: printerName,
-                    copies: copies,
-                    merge_before_print: mergeBeforePrint,
-                    passwords: filePasswords
-                };
-
-                const res = await fetch('/api/print', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody)
-                });
-
-                if (res.status === 422) {
-                    const errorData = await res.json();
-                    const detail = errorData.detail;
-                    if (detail && detail.error_code === "PASSWORD_REQUIRED") {
-                        showLoading(false);
-                        const matchedFile = files.find(f => f.original_name === detail.filename);
-                        const fileId = matchedFile ? matchedFile.id : files[0].id;
-                        showPasswordModal(detail.filename, fileId);
-                        return;
-                    }
-                }
-
-                if (!res.ok) {
-                    const error = await res.json();
-                    let msg = "印刷中にエラーが発生しました";
-                    if (typeof error.detail === 'string') msg = error.detail;
-                    else if (error.detail && error.detail.message) msg = error.detail.message;
-                    throw new Error(msg);
-                }
-
-                const data = await res.json();
-                showToast(`✅ ${data.message}`, "success", 7000);
-                hasProcessed = true;
-
-            } catch (e) {
-                console.error("Print execution failed", e);
-                showToast(`❌ 印刷失敗: ${e.message}`, "error", 7000);
-                alert(`印刷エラー: ${e.message}`);
-            } finally {
-                showLoading(false);
-            }
-            return;
-        }
-        
-        let previewWindow = null;
-        if (operation !== 'print') {
-            try {
-                previewWindow = window.open('about:blank', '_blank');
-                if (previewWindow) {
-                    previewWindow.document.write('<!DOCTYPE html><html><head><title>プレビュー生成中...</title><style>body{display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0f172a;color:#f8fafc;margin:0;}</style></head><body><div style="text-align:center;"><h2>⏳ プレビューを生成中...</h2><p style="color:#94a3b8;font-size:0.9rem;">PDFの処理を行っています。少々お待ちください...</p></div></body></html>');
-                }
-            } catch (e) {
-                console.warn("Could not pre-open window", e);
-            }
+            showToast(`🖨️ ${pages.length}ページを「${printerName || '既定プリンター'}」へ印刷送信中...`, "print", 4000);
         }
 
         try {
             const requestBody = {
-                file_ids: files.map(f => f.id),
+                pages: pages.map(p => ({
+                    file_id: p.file_id,
+                    page_index: p.page_index,
+                    rotation: p.rotation || 0
+                })),
                 operation: operation,
                 output_filename: customFilename,
+                printer_name: printerName,
+                copies: copies,
                 passwords: filePasswords
             };
-            
-            const res = await fetch('/api/process', {
+
+            const res = await fetch('/api/assemble', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
             });
-            
+
             if (res.status === 422) {
-                if (previewWindow) previewWindow.close();
                 const errorData = await res.json();
                 const detail = errorData.detail;
                 if (detail && detail.error_code === "PASSWORD_REQUIRED") {
                     showLoading(false);
                     const matchedFile = files.find(f => f.original_name === detail.filename);
-                    const fileId = matchedFile ? matchedFile.id : files[0].id;
+                    const fileId = matchedFile ? matchedFile.id : pages[0].file_id;
                     showPasswordModal(detail.filename, fileId);
                     return;
                 }
             }
-            
+
             if (!res.ok) {
-                if (previewWindow) previewWindow.close();
                 const error = await res.json();
-                let msg = "エラーが発生しました";
-                if (typeof error.detail === 'string') {
-                    msg = error.detail;
-                } else if (error.detail && error.detail.message) {
-                    msg = error.detail.message;
-                }
+                let msg = "処理中にエラーが発生しました";
+                if (typeof error.detail === 'string') msg = error.detail;
+                else if (error.detail && error.detail.message) msg = error.detail.message;
                 throw new Error(msg);
             }
-            
+
             const data = await res.json();
 
-            // Preview or Download handling
-            if (data.is_zip) {
-                if (previewWindow) previewWindow.close();
-                const a = document.createElement('a');
-                a.href = data.download_url;
-                a.download = data.filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                showToast(`✅ ${data.filename} をダウンロードしました`, "success", 4000);
+            if (operation === 'print') {
+                showToast(`✅ ${data.message}`, "success", 7000);
+                hasProcessed = true;
             } else {
-                if (previewWindow) {
-                    previewWindow.location.href = data.preview_url;
-                } else {
-                    window.open(data.preview_url, '_blank');
-                }
-                showToast(`👁️ 別ウィンドウでプレビューを開きました`, "info", 4000);
+                showProcessResultCard(data);
+                hasProcessed = true;
+                showToast(`✅ ${data.filename} を作成しました`, "success", 4000);
             }
 
-            // Display Result Card in the widget
-            showProcessResultCard(data);
-            hasProcessed = true;
-            
         } catch (e) {
-            if (previewWindow) previewWindow.close();
+            console.error("Assemble failed", e);
+            showToast(`❌ エラー: ${e.message}`, "error", 7000);
             alert(`処理エラー: ${e.message}`);
         } finally {
             showLoading(false);
         }
     }
 
+    // Action button listeners
+    if (btnAssembleCompress) {
+        btnAssembleCompress.addEventListener('click', () => assemblePages('merge_compress'));
+    }
+    if (btnAssembleMerge) {
+        btnAssembleMerge.addEventListener('click', () => assemblePages('merge'));
+    }
+    if (btnAssemblePrint) {
+        btnAssemblePrint.addEventListener('click', () => assemblePages('print'));
+    }
+    if (clearAllBtn) {
+        clearAllBtn.addEventListener('click', () => removeAllFiles());
+    }
+    if (btnResultBack) {
+        btnResultBack.addEventListener('click', () => {
+            const resultCard = document.getElementById('process-result-card');
+            if (resultCard) resultCard.classList.add('hidden');
+            if (fileListContainer) fileListContainer.classList.remove('hidden');
+        });
+    }
+
+    // Display Result Card in the widget
     function showProcessResultCard(data) {
         const resultCard = document.getElementById('process-result-card');
         const filenameDisplay = document.getElementById('result-filename-display');
