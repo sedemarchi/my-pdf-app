@@ -21,6 +21,7 @@ import fitz
 import io
 import base64
 import re
+from urllib.parse import quote
 from datetime import datetime
 from PIL import Image
 from typing import List, Optional, Dict
@@ -62,6 +63,7 @@ class PrintRequest(BaseModel):
 
 
 session_files = {}
+session_results = {}
 
 app = FastAPI(title="Local iLovePDF Clone")
 
@@ -840,6 +842,8 @@ async def process_pdf(request: ProcessRequest):
         clean_base = re.sub(r'_COMP$', '', clean_base, flags=re.IGNORECASE)
         out_filename = clean_base + ".zip"
     
+    out_path = None
+
     if request.operation == "merge_compress":
         merged_doc = fitz.open()
         for item in items:
@@ -851,7 +855,6 @@ async def process_pdf(request: ProcessRequest):
         out_path = os.path.join(TEMP_DIR, f"{output_id}_merged_compressed.pdf")
         compress_doc_to_target_size(merged_doc, out_path)
         merged_doc.close()
-        return FileResponse(out_path, filename=out_filename)
 
     elif request.operation == "merge":
         merged_doc = fitz.open()
@@ -863,7 +866,6 @@ async def process_pdf(request: ProcessRequest):
         out_path = os.path.join(TEMP_DIR, f"{output_id}_merged.pdf")
         merged_doc.save(out_path)
         merged_doc.close()
-        return FileResponse(out_path, filename=out_filename)
         
     elif request.operation == "split":
         if len(items) > 1:
@@ -880,7 +882,7 @@ async def process_pdf(request: ProcessRequest):
                 new_doc.close()
                 zf.writestr(f"page_{page_num+1}.pdf", pdf_bytes)
         doc.close()
-        return FileResponse(zip_path, filename="split_result.zip")
+        out_path = zip_path
         
     elif request.operation == "compress":
         if len(items) == 1:
@@ -888,16 +890,15 @@ async def process_pdf(request: ProcessRequest):
             pwd = passwords.get(item.id)
             out_path = os.path.join(TEMP_DIR, f"{output_id}_compressed.pdf")
             compress_pdf_file(item.temp_path, out_path, quality=40, password=pwd, original_name=item.original_name)
-            return FileResponse(out_path, filename=f"compressed_{item.original_name}")
         else:
             zip_path = os.path.join(TEMP_DIR, f"{output_id}_compressed.zip")
             with zipfile.ZipFile(zip_path, 'w') as zf:
                 for item in items:
                     pwd = passwords.get(item.id)
-                    out_path = os.path.join(TEMP_DIR, f"{output_id}_tmp_{item.id}.pdf")
-                    compress_pdf_file(item.temp_path, out_path, quality=40, password=pwd, original_name=item.original_name)
-                    zf.write(out_path, f"compressed_{item.original_name}")
-            return FileResponse(zip_path, filename="compressed_files.zip")
+                    tmp_p = os.path.join(TEMP_DIR, f"{output_id}_tmp_{item.id}.pdf")
+                    compress_pdf_file(item.temp_path, tmp_p, quality=40, password=pwd, original_name=item.original_name)
+                    zf.write(tmp_p, f"compressed_{item.original_name}")
+            out_path = zip_path
             
     elif request.operation == "unlock":
         if len(items) == 1:
@@ -907,24 +908,22 @@ async def process_pdf(request: ProcessRequest):
             out_path = os.path.join(TEMP_DIR, f"{output_id}_unlocked.pdf")
             doc.save(out_path, clean=True)
             doc.close()
-            return FileResponse(out_path, filename=f"unlocked_{item.original_name}")
         else:
             zip_path = os.path.join(TEMP_DIR, f"{output_id}_unlocked.zip")
             with zipfile.ZipFile(zip_path, 'w') as zf:
                 for item in items:
                     pwd = passwords.get(item.id)
                     doc = open_and_unlock_pdf(item.temp_path, password=pwd, original_name=item.original_name)
-                    out_path = os.path.join(TEMP_DIR, f"{output_id}_tmp_{item.id}.pdf")
-                    doc.save(out_path, clean=True)
+                    tmp_p = os.path.join(TEMP_DIR, f"{output_id}_tmp_{item.id}.pdf")
+                    doc.save(tmp_p, clean=True)
                     doc.close()
-                    zf.write(out_path, f"unlocked_{item.original_name}")
-            return FileResponse(zip_path, filename="unlocked_files.zip")
+                    zf.write(tmp_p, f"unlocked_{item.original_name}")
+            out_path = zip_path
 
     elif request.operation in ("to_jpg", "to_png"):
         img_format = "png" if request.operation == "to_png" else "jpeg"
         ext = "png" if request.operation == "to_png" else "jpg"
         
-        # Pre-count total pages across all files
         total_pages = 0
         for item in items:
             pwd = passwords.get(item.id)
@@ -941,7 +940,7 @@ async def process_pdf(request: ProcessRequest):
             out_path = os.path.join(TEMP_DIR, f"{output_id}_{base}.{ext}")
             pix.save(out_path)
             doc.close()
-            return FileResponse(out_path, filename=f"{base}_page_1.{ext}")
+            out_filename = f"{base}_page_1.{ext}"
         else:
             zip_path = os.path.join(TEMP_DIR, f"{output_id}_images_{ext}.zip")
             with zipfile.ZipFile(zip_path, 'w') as zf:
@@ -954,7 +953,8 @@ async def process_pdf(request: ProcessRequest):
                         img_bytes = pix.tobytes(img_format)
                         zf.writestr(f"{base}_page_{page_num+1}.{ext}", img_bytes)
                     doc.close()
-            return FileResponse(zip_path, filename=f"images_{ext}.zip")
+            out_path = zip_path
+            out_filename = f"images_{ext}.zip"
 
     elif request.operation == "print":
         print_req = PrintRequest(
@@ -966,7 +966,84 @@ async def process_pdf(request: ProcessRequest):
         )
         return await api_print_endpoint(print_req)
 
-    raise HTTPException(status_code=400, detail="Invalid operation")
+    if not out_path or not os.path.exists(out_path):
+        raise HTTPException(status_code=500, detail="出力ファイルの生成に失敗しました")
+
+    size = os.path.getsize(out_path)
+    session_results[output_id] = {
+        "id": output_id,
+        "path": out_path,
+        "filename": out_filename,
+        "size": size,
+        "is_zip": out_filename.endswith(".zip"),
+        "timestamp": time.time()
+    }
+    
+    page_count = 0
+    if out_filename.endswith(".pdf"):
+        try:
+            doc = fitz.open(out_path)
+            page_count = len(doc)
+            doc.close()
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "result_id": output_id,
+        "filename": out_filename,
+        "size": size,
+        "page_count": page_count,
+        "is_zip": out_filename.endswith(".zip"),
+        "preview_url": f"/viewer.html?id={output_id}",
+        "download_url": f"/api/download-result/{output_id}"
+    }
+
+@app.get("/api/download-result/{result_id}")
+def download_result(result_id: str):
+    if result_id not in session_results:
+        raise HTTPException(status_code=404, detail="ファイルが見つかりません。")
+    item = session_results[result_id]
+    encoded_fn = quote(item["filename"])
+    return FileResponse(
+        item["path"],
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_fn}"}
+    )
+
+@app.get("/api/view-pdf/{result_id}")
+def view_pdf(result_id: str):
+    if result_id not in session_results:
+        raise HTTPException(status_code=404, detail="ファイルが見つかりません。")
+    item = session_results[result_id]
+    encoded_fn = quote(item["filename"])
+    return FileResponse(
+        item["path"],
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_fn}"}
+    )
+
+@app.get("/api/result-info/{result_id}")
+def get_result_info(result_id: str):
+    if result_id not in session_results:
+        raise HTTPException(status_code=404, detail="ファイルが見つかりません。")
+    item = session_results[result_id]
+    page_count = 0
+    if not item["is_zip"]:
+        try:
+            doc = fitz.open(item["path"])
+            page_count = len(doc)
+            doc.close()
+        except Exception:
+            pass
+    return {
+        "result_id": item["id"],
+        "filename": item["filename"],
+        "size": item["size"],
+        "is_zip": item["is_zip"],
+        "page_count": page_count,
+        "download_url": f"/api/download-result/{result_id}"
+    }
 
 
 # Serve static files (HTML, CSS, JS)

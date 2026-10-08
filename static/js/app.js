@@ -341,6 +341,8 @@ document.addEventListener('DOMContentLoaded', () => {
             filePasswords = {};
             hasProcessed = false;
         }
+        const resultCard = document.getElementById('process-result-card');
+        if (resultCard) resultCard.classList.add('hidden');
 
         const newlyUploaded = [];
         showLoading(true);
@@ -474,6 +476,8 @@ document.addEventListener('DOMContentLoaded', () => {
         files = [];
         filePasswords = {};
         hasProcessed = false;
+        const resultCard = document.getElementById('process-result-card');
+        if (resultCard) resultCard.classList.add('hidden');
         updateUI();
     }
 
@@ -877,6 +881,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+        let previewWindow = null;
+        if (operation !== 'print') {
+            try {
+                previewWindow = window.open('about:blank', '_blank');
+                if (previewWindow) {
+                    previewWindow.document.write('<!DOCTYPE html><html><head><title>プレビュー生成中...</title><style>body{display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0f172a;color:#f8fafc;margin:0;}</style></head><body><div style="text-align:center;"><h2>⏳ プレビューを生成中...</h2><p style="color:#94a3b8;font-size:0.9rem;">PDFの処理を行っています。少々お待ちください...</p></div></body></html>');
+                }
+            } catch (e) {
+                console.warn("Could not pre-open window", e);
+            }
+        }
+
         try {
             const requestBody = {
                 file_ids: files.map(f => f.id),
@@ -894,6 +910,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             if (res.status === 422) {
+                if (previewWindow) previewWindow.close();
                 const errorData = await res.json();
                 const detail = errorData.detail;
                 if (detail && detail.error_code === "PASSWORD_REQUIRED") {
@@ -906,6 +923,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (!res.ok) {
+                if (previewWindow) previewWindow.close();
                 const error = await res.json();
                 let msg = "エラーが発生しました";
                 if (typeof error.detail === 'string') {
@@ -916,40 +934,81 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(msg);
             }
             
-            // Handle file download - Always prioritize Content-Disposition header filename!
-            const blob = await res.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            
-            const contentDisposition = res.headers.get('content-disposition');
-            let filename = '';
-            if (contentDisposition) {
-                const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
-                const normalMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
-                if (utf8Match && utf8Match[1]) {
-                    filename = decodeURIComponent(utf8Match[1]);
-                } else if (normalMatch && normalMatch[1]) {
-                    filename = decodeURIComponent(normalMatch[1]);
-                }
-            }
-            if (!filename) {
-                filename = customFilename || 'result.pdf';
-            }
-            
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
+            const data = await res.json();
 
-            // Mark as processed so next drop auto-clears old list
+            // Preview or Download handling
+            if (data.is_zip) {
+                if (previewWindow) previewWindow.close();
+                const a = document.createElement('a');
+                a.href = data.download_url;
+                a.download = data.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                showToast(`✅ ${data.filename} をダウンロードしました`, "success", 4000);
+            } else {
+                if (previewWindow) {
+                    previewWindow.location.href = data.preview_url;
+                } else {
+                    window.open(data.preview_url, '_blank');
+                }
+                showToast(`👁️ 別ウィンドウでプレビューを開きました`, "info", 4000);
+            }
+
+            // Display Result Card in the widget
+            showProcessResultCard(data);
             hasProcessed = true;
             
         } catch (e) {
+            if (previewWindow) previewWindow.close();
             alert(`処理エラー: ${e.message}`);
         } finally {
             showLoading(false);
+        }
+    }
+
+    function showProcessResultCard(data) {
+        const resultCard = document.getElementById('process-result-card');
+        const filenameDisplay = document.getElementById('result-filename-display');
+        const statsDisplay = document.getElementById('result-stats-display');
+        const reopenPreviewBtn = document.getElementById('btn-reopen-preview');
+        const resultDownloadBtn = document.getElementById('btn-result-download');
+        const resultNewBtn = document.getElementById('btn-result-new');
+
+        if (!resultCard) return;
+
+        fileListContainer.classList.add('hidden');
+        dropZone.classList.add('hidden');
+        resultCard.classList.remove('hidden');
+
+        if (filenameDisplay) filenameDisplay.textContent = data.filename;
+        if (statsDisplay) {
+            const pageStr = data.page_count ? `${data.page_count} ページ • ` : '';
+            statsDisplay.textContent = `${pageStr}${formatSize(data.size)}`;
+        }
+
+        if (reopenPreviewBtn) {
+            reopenPreviewBtn.onclick = () => {
+                if (data.preview_url) window.open(data.preview_url, '_blank');
+            };
+        }
+
+        if (resultDownloadBtn) {
+            resultDownloadBtn.onclick = () => {
+                const a = document.createElement('a');
+                a.href = data.download_url;
+                a.download = data.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            };
+        }
+
+        if (resultNewBtn) {
+            resultNewBtn.onclick = () => {
+                resultCard.classList.add('hidden');
+                removeAllFiles();
+            };
         }
     }
 });

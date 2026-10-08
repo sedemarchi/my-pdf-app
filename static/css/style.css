@@ -635,7 +635,124 @@ html, body {
 }
 
 /* ====================================================
-   5. Loading Overlay & Modals
+   5. Widget Result Card (Compact & Instant Preview)
+   ==================================================== */
+.widget-result-card {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 6px;
+    background: #ffffff;
+    border: 1.5px solid #10b981;
+    border-radius: 8px;
+    text-align: center;
+    box-sizing: border-box;
+    position: relative;
+}
+
+.result-badge-icon {
+    font-size: 1.3rem;
+    color: #10b981;
+    line-height: 1;
+}
+
+.result-info-box {
+    max-width: 95%;
+}
+
+.result-filename {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-main);
+    white-space: nowrap !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.result-stats {
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-top: 1px;
+}
+
+.result-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 3px;
+}
+
+.btn-result-preview {
+    background: #ffffff;
+    color: #0284c7;
+    border: 1.2px solid #0284c7;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap !important;
+    transition: all 0.15s ease;
+}
+
+.btn-result-preview:hover {
+    background: #f0f9ff;
+    transform: translateY(-1px);
+}
+
+.btn-result-download {
+    background: var(--primary-red);
+    color: #ffffff;
+    border: none;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap !important;
+    transition: all 0.15s ease;
+    box-shadow: 0 2px 4px rgba(229, 50, 45, 0.2);
+}
+
+.btn-result-download:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+}
+
+.btn-result-new {
+    position: absolute;
+    top: 3px;
+    right: 4px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 0.62rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+
+.btn-result-new:hover {
+    color: var(--text-main);
+    background: #f1f5f9;
+}
+
+/* ====================================================
+   6. Loading Overlay & Modals
    ==================================================== */
 .hidden { display: none !important; }
 

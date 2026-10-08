@@ -148,6 +148,26 @@
             <button id="process-btn" style="display: none;"></button>
         </div>
 
+        <!-- 3. Result Preview & Action Card (Shown after processing) -->
+        <div id="process-result-card" class="widget-result-card hidden">
+            <div class="result-badge-icon"><i class="fa-solid fa-circle-check"></i></div>
+            <div class="result-info-box">
+                <div class="result-filename" id="result-filename-display">result.pdf</div>
+                <div class="result-stats" id="result-stats-display">-- ページ • -- KB</div>
+            </div>
+            <div class="result-actions">
+                <button type="button" class="btn-result-preview" id="btn-reopen-preview" title="プレビューを別ウィンドウで確認">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> プレビュー
+                </button>
+                <button type="button" class="btn-result-download" id="btn-result-download" title="ファイルを保存">
+                    <i class="fa-solid fa-download"></i> 保存
+                </button>
+            </div>
+            <button type="button" class="btn-result-new" id="btn-result-new" title="新しい作業を開始">
+                <i class="fa-solid fa-rotate-left"></i> 新規
+            </button>
+        </div>
+
         <!-- Loading Overlay -->
         <div id="loading-overlay" class="loading-overlay hidden">
             <div class="spinner"></div>
