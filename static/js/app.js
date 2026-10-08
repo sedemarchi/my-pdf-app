@@ -66,8 +66,24 @@ document.addEventListener('DOMContentLoaded', () => {
     let filePasswords = {}; // { file_id: "password" }
     let currentLockedFileId = null;
     let pendingDirectPrintFiles = null; // Store files for retry if password needed during direct print
-    let hasProcessed = false; // Tracks if previous operation completed
+    let hasProcessed = false;
     let draggedPageIndex = null;
+    let lastDroppedFileHandle = null;
+
+    function captureDroppedFileHandle(e) {
+        if (e.dataTransfer && e.dataTransfer.items) {
+            for (const item of e.dataTransfer.items) {
+                if (item.kind === 'file' && typeof item.getAsFileSystemHandle === 'function') {
+                    item.getAsFileSystemHandle().then(handle => {
+                        if (handle) {
+                            lastDroppedFileHandle = handle;
+                        }
+                    }).catch(err => console.debug('getAsFileSystemHandle not available:', err));
+                    break;
+                }
+            }
+        }
+    }
 
     // Preview state
     let previewFile = null;
@@ -201,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 destBadge.className = 'flow-badge badge-dest-tool';
                 destBadge.title = '結合・圧縮PDF';
             }
-            if (destIcon) destIcon.className = 'fa-solid fa-file-zipper';
+            if (destIcon) destIcon.className = 'fa-solid fa-file-pdf';
             if (dropTitle) dropTitle.textContent = 'PDFをドロップ';
         }
     }
@@ -295,6 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('drop', (e) => {
         e.preventDefault();
         dropZone.classList.remove('dragover');
+        captureDroppedFileHandle(e);
         if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             handleFiles(e.dataTransfer.files);
         }
@@ -317,6 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         e.stopPropagation();
         dropZone.classList.remove('dragover');
+        captureDroppedFileHandle(e);
         if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             handleFiles(e.dataTransfer.files);
         }
@@ -618,6 +636,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addCard.addEventListener('drop', (e) => {
             e.preventDefault();
             addCard.classList.remove('drag-over');
+            captureDroppedFileHandle(e);
             if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                 handleFiles(e.dataTransfer.files);
             }
@@ -802,6 +821,48 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function savePdfWithPicker(downloadUrl, filename) {
+        try {
+            if ('showSaveFilePicker' in window) {
+                const options = {
+                    suggestedName: filename,
+                    types: [{
+                        description: 'PDF ドキュメント (*.pdf)',
+                        accept: {
+                            'application/pdf': ['.pdf']
+                        }
+                    }]
+                };
+                if (lastDroppedFileHandle) {
+                    options.startIn = lastDroppedFileHandle;
+                }
+                const fileHandle = await window.showSaveFilePicker(options);
+                const writable = await fileHandle.createWritable();
+                const res = await fetch(downloadUrl);
+                const blob = await res.blob();
+                await writable.write(blob);
+                await writable.close();
+                showToast(`✅ 保存完了: ${fileHandle.name}`, 'success', 5000);
+                return true;
+            }
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                return false;
+            }
+            console.warn('showSaveFilePicker fallback:', err);
+        }
+
+        // Fallback for standard browsers
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        showToast(`✅ 保存開始: ${filename}`, 'success', 4000);
+        return true;
+    }
+
     // Assemble and Execute Action (Merge Compress, Merge, Print)
     async function assemblePages(operation = 'merge_compress') {
         if (pages.length === 0) {
@@ -866,7 +927,16 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 showProcessResultCard(data);
                 hasProcessed = true;
-                showToast(`✅ ${data.filename} を作成しました`, "success", 4000);
+                if (data.saved_to_source) {
+                    showToast(`✅ 元のフォルダに直接保存しました:\n${data.saved_to_source}`, "success", 8000);
+                } else {
+                    showToast(`✅ ${data.filename} を作成しました`, "success", 4000);
+                    try {
+                        await savePdfWithPicker(data.download_url, data.filename);
+                    } catch (pe) {
+                        console.debug('Save picker auto prompt:', pe);
+                    }
+                }
             }
 
         } catch (e) {
@@ -904,6 +974,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const resultCard = document.getElementById('process-result-card');
         const filenameDisplay = document.getElementById('result-filename-display');
         const statsDisplay = document.getElementById('result-stats-display');
+        const locationDisplay = document.getElementById('result-location-display');
         const reopenPreviewBtn = document.getElementById('btn-reopen-preview');
         const resultDownloadBtn = document.getElementById('btn-result-download');
         const resultNewBtn = document.getElementById('btn-result-new');
@@ -919,6 +990,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const pageStr = data.page_count ? `${data.page_count} ページ • ` : '';
             statsDisplay.textContent = `${pageStr}${formatSize(data.size)}`;
         }
+        if (locationDisplay) {
+            if (data.saved_to_source) {
+                locationDisplay.textContent = `📁 保存先: ${data.saved_to_source}`;
+                locationDisplay.classList.remove('hidden');
+            } else {
+                locationDisplay.classList.add('hidden');
+            }
+        }
 
         if (reopenPreviewBtn) {
             reopenPreviewBtn.onclick = () => {
@@ -928,12 +1007,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (resultDownloadBtn) {
             resultDownloadBtn.onclick = () => {
-                const a = document.createElement('a');
-                a.href = data.download_url;
-                a.download = data.filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
+                savePdfWithPicker(data.download_url, data.filename);
             };
         }
 

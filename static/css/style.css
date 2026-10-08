@@ -779,6 +779,21 @@ html, body {
     margin-top: 1px;
 }
 
+.result-location {
+    font-size: 0.60rem;
+    color: #047857;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 4px;
+    padding: 1px 6px;
+    max-width: 90%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+    display: inline-block;
+}
+
 .result-actions {
     display: flex;
     align-items: center;

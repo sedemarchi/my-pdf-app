@@ -19,7 +19,7 @@
         <div class="header-right-controls">
             <!-- Mode Toggle: Tools vs Auto-Print (Iconographic) -->
             <label class="mode-toggle-wrap" title="モード切替: ツール ⇄ 即時印刷">
-                <i class="fa-solid fa-file-zipper mode-indicator-icon tool-active" id="icon-mode-tool" title="PDFツールモード"></i>
+                <i class="fa-solid fa-file-pdf mode-indicator-icon tool-active" id="icon-mode-tool" title="PDFツールモード"></i>
                 <input type="checkbox" id="auto-print-toggle">
                 <span class="slider round"></span>
                 <i class="fa-solid fa-print mode-indicator-icon" id="icon-mode-print" title="即時印刷モード"></i>
@@ -55,7 +55,7 @@
 
                 <div class="flow-dest">
                     <div class="flow-badge badge-dest-tool" id="dest-badge" title="結合・圧縮PDF">
-                        <i class="fa-solid fa-file-zipper" id="dest-icon"></i>
+                        <i class="fa-solid fa-file-pdf" id="dest-icon"></i>
                     </div>
                 </div>
             </div>
@@ -85,8 +85,8 @@
 
                 <div class="toolbar-right">
                     <!-- Direct Assembly Actions -->
-                    <button type="button" id="btn-assemble-compress" class="btn-action-primary" title="全ページを並び順どおり結合して圧縮保存">
-                        <i class="fa-solid fa-file-zipper"></i> 結合・圧縮
+                    <button type="button" id="btn-assemble-compress" class="btn-action-primary" title="全ページを並び順どおり結合して圧縮PDF保存">
+                        <i class="fa-solid fa-file-pdf"></i> 結合・圧縮
                     </button>
                     <button type="button" id="btn-assemble-merge" class="btn-action-secondary" title="全ページを無圧縮で結合保存">
                         <i class="fa-solid fa-object-group"></i> 結合のみ
@@ -127,6 +127,7 @@
             <div class="result-info-box">
                 <div class="result-filename" id="result-filename-display">result.pdf</div>
                 <div class="result-stats" id="result-stats-display">-- ページ • -- KB</div>
+                <div class="result-location hidden" id="result-location-display"></div>
             </div>
             <div class="result-actions">
                 <button type="button" class="btn-result-download" id="btn-result-download" title="ファイルを保存">

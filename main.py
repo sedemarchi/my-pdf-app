@@ -67,6 +67,7 @@ class FileItem(BaseModel):
     thumbnail_base64: str = ""
     is_encrypted: bool = False
     pages: List[PageItem] = []
+    source_dir: str = ""
 
 class ProcessRequest(BaseModel):
     file_ids: List[str]
@@ -87,6 +88,7 @@ class PrintRequest(BaseModel):
 
 session_files = {}
 session_results = {}
+primary_source_dir = ""
 
 app = FastAPI(title="Local iLovePDF Clone")
 
@@ -879,17 +881,18 @@ async def process_pdf(request: ProcessRequest):
     clean_base = re.sub(r'\.(pdf|zip)$', '', raw_name, flags=re.IGNORECASE).strip()
     
     # AT SAVE TIME: Determine whether to append _COMP strictly based on operation!
-    if request.operation in ("merge_compress", "compress"):
-        if not clean_base.upper().endswith("_COMP"):
-            clean_base += "_COMP"
+    if request.operation in ("merge_compress", "compress", "merge", "unlock"):
+        if request.operation in ("merge_compress", "compress"):
+            if not clean_base.upper().endswith("_COMP"):
+                clean_base += "_COMP"
+        else:
+            clean_base = re.sub(r'_COMP$', '', clean_base, flags=re.IGNORECASE)
         out_filename = clean_base + ".pdf"
-    elif request.operation == "merge":
-        # Remove any _COMP suffix if operation is merge (uncompressed)
-        clean_base = re.sub(r'_COMP$', '', clean_base, flags=re.IGNORECASE)
-        out_filename = clean_base + ".pdf"
-    else:
+    elif request.operation in ("to_jpg", "to_png", "split"):
         clean_base = re.sub(r'_COMP$', '', clean_base, flags=re.IGNORECASE)
         out_filename = clean_base + ".zip"
+    else:
+        out_filename = clean_base + ".pdf"
     
     out_path = None
 
@@ -940,14 +943,15 @@ async def process_pdf(request: ProcessRequest):
             out_path = os.path.join(TEMP_DIR, f"{output_id}_compressed.pdf")
             compress_pdf_file(item.temp_path, out_path, quality=40, password=pwd, original_name=item.original_name)
         else:
-            zip_path = os.path.join(TEMP_DIR, f"{output_id}_compressed.zip")
-            with zipfile.ZipFile(zip_path, 'w') as zf:
-                for item in items:
-                    pwd = passwords.get(item.id)
-                    tmp_p = os.path.join(TEMP_DIR, f"{output_id}_tmp_{item.id}.pdf")
-                    compress_pdf_file(item.temp_path, tmp_p, quality=40, password=pwd, original_name=item.original_name)
-                    zf.write(tmp_p, f"compressed_{item.original_name}")
-            out_path = zip_path
+            merged_doc = fitz.open()
+            for item in items:
+                pwd = passwords.get(item.id)
+                doc = open_and_unlock_pdf(item.temp_path, password=pwd, original_name=item.original_name)
+                merged_doc.insert_pdf(doc)
+                doc.close()
+            out_path = os.path.join(TEMP_DIR, f"{output_id}_compressed.pdf")
+            compress_doc_to_target_size(merged_doc, out_path)
+            merged_doc.close()
             
     elif request.operation == "unlock":
         if len(items) == 1:
@@ -958,16 +962,15 @@ async def process_pdf(request: ProcessRequest):
             doc.save(out_path, clean=True)
             doc.close()
         else:
-            zip_path = os.path.join(TEMP_DIR, f"{output_id}_unlocked.zip")
-            with zipfile.ZipFile(zip_path, 'w') as zf:
-                for item in items:
-                    pwd = passwords.get(item.id)
-                    doc = open_and_unlock_pdf(item.temp_path, password=pwd, original_name=item.original_name)
-                    tmp_p = os.path.join(TEMP_DIR, f"{output_id}_tmp_{item.id}.pdf")
-                    doc.save(tmp_p, clean=True)
-                    doc.close()
-                    zf.write(tmp_p, f"unlocked_{item.original_name}")
-            out_path = zip_path
+            merged_doc = fitz.open()
+            for item in items:
+                pwd = passwords.get(item.id)
+                doc = open_and_unlock_pdf(item.temp_path, password=pwd, original_name=item.original_name)
+                merged_doc.insert_pdf(doc)
+                doc.close()
+            out_path = os.path.join(TEMP_DIR, f"{output_id}_unlocked.pdf")
+            merged_doc.save(out_path, clean=True)
+            merged_doc.close()
 
     elif request.operation in ("to_jpg", "to_png"):
         img_format = "png" if request.operation == "to_png" else "jpeg"
@@ -1037,6 +1040,23 @@ async def process_pdf(request: ProcessRequest):
         except Exception:
             pass
 
+    saved_to_source = ""
+    target_dir = ""
+    for item in items:
+        if getattr(item, 'source_dir', '') and os.path.isdir(item.source_dir):
+            target_dir = item.source_dir
+            break
+    if not target_dir and primary_source_dir and os.path.isdir(primary_source_dir):
+        target_dir = primary_source_dir
+
+    if target_dir:
+        try:
+            dest_file = os.path.join(target_dir, out_filename)
+            shutil.copy2(out_path, dest_file)
+            saved_to_source = dest_file
+        except Exception as e:
+            print(f"Could not auto-copy to source dir {target_dir}: {e}")
+
     return {
         "status": "success",
         "result_id": output_id,
@@ -1045,7 +1065,8 @@ async def process_pdf(request: ProcessRequest):
         "page_count": page_count,
         "is_zip": out_filename.endswith(".zip"),
         "preview_url": f"/viewer.html?id={output_id}",
-        "download_url": f"/api/download-result/{output_id}"
+        "download_url": f"/api/download-result/{output_id}",
+        "saved_to_source": saved_to_source
     }
 
 @app.get("/api/download-result/{result_id}")
@@ -1192,6 +1213,23 @@ async def assemble_pages(request: AssembleRequest):
         "timestamp": time.time()
     }
 
+    saved_to_source = ""
+    target_dir = ""
+    for item in source_items:
+        if getattr(item, 'source_dir', '') and os.path.isdir(item.source_dir):
+            target_dir = item.source_dir
+            break
+    if not target_dir and primary_source_dir and os.path.isdir(primary_source_dir):
+        target_dir = primary_source_dir
+
+    if target_dir:
+        try:
+            dest_file = os.path.join(target_dir, out_filename)
+            shutil.copy2(out_path, dest_file)
+            saved_to_source = dest_file
+        except Exception as e:
+            print(f"Could not auto-copy to source dir {target_dir}: {e}")
+
     return {
         "status": "success",
         "result_id": output_id,
@@ -1200,7 +1238,8 @@ async def assemble_pages(request: AssembleRequest):
         "page_count": page_count,
         "is_zip": False,
         "preview_url": f"/viewer.html?id={output_id}",
-        "download_url": f"/api/download-result/{output_id}"
+        "download_url": f"/api/download-result/{output_id}",
+        "saved_to_source": saved_to_source
     }
 
 
@@ -1223,7 +1262,7 @@ def cleanup_old_server_processes():
     current_pid = os.getpid()
     if sys.platform == "win32":
         try:
-            res = subprocess.run(["netstat", "-ano"], capture_output=True, text=True)
+            res = subprocess.run(["netstat", "-ano"], capture_output=True, text=True, errors="ignore")
             for line in res.stdout.splitlines():
                 if "127.0.0.1:8000" in line and "LISTENING" in line:
                     parts = line.strip().split()
@@ -1290,22 +1329,89 @@ def open_browser():
 
 
 def init_app():
+    global primary_source_dir
     # Process sys.argv
     args = sys.argv[1:]
     for arg in args:
         if os.path.isfile(arg):
+            abs_arg = os.path.abspath(arg)
+            abs_dir = os.path.dirname(abs_arg)
+            if not primary_source_dir:
+                primary_source_dir = abs_dir
+
             # Copy to temp dir
             file_id = str(uuid.uuid4())
             filename = os.path.basename(arg)
             temp_path = os.path.join(TEMP_DIR, f"{file_id}_{filename}")
             shutil.copy2(arg, temp_path)
             size = os.path.getsize(temp_path)
-            
+
+            ext = os.path.splitext(filename)[1].lower()
+            if ext in ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff'):
+                converted_pdf_path = os.path.join(TEMP_DIR, f"{file_id}_img_converted.pdf")
+                converted_successfully = False
+                try:
+                    img_doc = fitz.open(temp_path)
+                    pdf_bytes = img_doc.convert_to_pdf()
+                    with open(converted_pdf_path, "wb") as f:
+                        f.write(pdf_bytes)
+                    img_doc.close()
+                    converted_successfully = True
+                except Exception:
+                    try:
+                        img = Image.open(temp_path)
+                        if img.mode in ("RGBA", "P"):
+                            img = img.convert("RGB")
+                        img.save(converted_pdf_path, "PDF", resolution=100.0)
+                        converted_successfully = True
+                    except Exception as e_pil:
+                        print(f"Image conversion failed: {e_pil}")
+                if converted_successfully and os.path.exists(converted_pdf_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+                    temp_path = converted_pdf_path
+                    size = os.path.getsize(temp_path)
+
+            meta_info = get_pdf_metadata_info(temp_path)
+            pages_list = []
+            try:
+                doc = fitz.open(temp_path)
+                if not (doc.is_encrypted and not doc.authenticate("")):
+                    for p_idx in range(len(doc)):
+                        try:
+                            p = doc[p_idx]
+                            pix = p.get_pixmap(dpi=50)
+                            img_bytes = pix.tobytes("jpeg", jpg_quality=70)
+                            b64_str = "data:image/jpeg;base64," + base64.b64encode(img_bytes).decode("utf-8")
+                            pages_list.append(PageItem(
+                                page_id=f"{file_id}_p{p_idx}",
+                                file_id=file_id,
+                                page_index=p_idx,
+                                page_num=p_idx + 1,
+                                thumbnail=b64_str,
+                                source_name=filename,
+                                rotation=0
+                            ))
+                        except Exception as ep:
+                            print(f"Error rendering page {p_idx}: {ep}")
+                doc.close()
+            except Exception as e:
+                print(f"Error extracting pages from {temp_path}: {e}")
+
             item = FileItem(
                 id=file_id,
                 original_name=filename,
                 temp_path=temp_path,
-                size=size
+                size=size,
+                page_count=meta_info["page_count"],
+                scan_time_str=meta_info["scan_time_str"],
+                timestamp=meta_info["timestamp"],
+                thumbnail_base64=meta_info["thumbnail_base64"],
+                is_encrypted=meta_info["is_encrypted"],
+                pages=pages_list,
+                source_dir=abs_dir
             )
             session_files[file_id] = item
 
