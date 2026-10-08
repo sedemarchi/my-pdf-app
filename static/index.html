@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local iLovePDF - 万能ツール</title>
-    <link rel="stylesheet" href="css/style.css?v=5.0">
+    <link rel="stylesheet" href="css/style.css?v=6.0">
     <link rel="icon" type="image/png" href="favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="widget-body">
-    <!-- Slim Compact Header (Takes only ~42px, fits Google Sites iframe) -->
+    <!-- Slim Compact Header (Takes only ~28px, fits Google Sites iframe) -->
     <header class="compact-header">
         <div class="logo">
             <img src="favicon.png" alt="Logo" class="logo-icon">
@@ -19,33 +19,17 @@
 
         <div class="header-right-controls">
             <!-- Mode Toggle: PDF Tools vs Auto-Print -->
-            <div class="mode-toggle-wrap">
-                <label class="switch-compact">
-                    <input type="checkbox" id="auto-print-toggle">
-                    <span class="slider round"></span>
-                </label>
-                <span class="toggle-text"><i class="fa-solid fa-print"></i> 即時印刷</span>
-                <span class="badge-status badge-off" id="print-mode-status">OFF</span>
-            </div>
+            <label class="mode-toggle-wrap" title="投げ込み即時印刷モード">
+                <input type="checkbox" id="auto-print-toggle">
+                <span class="slider round"></span>
+                <span class="toggle-text"><i class="fa-solid fa-print"></i> 即印刷</span>
+            </label>
 
             <!-- Print Settings Inline (Shown only when Print Mode is ON) -->
             <div id="quick-print-panel" class="quick-print-inline hidden">
-                <div class="control-item">
-                    <select id="printer-select" class="select-compact">
-                        <option value="">プリンター取得中...</option>
-                    </select>
-                </div>
-                <div class="control-item">
-                    <span class="item-label">部数:</span>
-                    <input type="number" id="print-copies-input" min="1" max="99" value="1" class="input-copies-compact">
-                </div>
-                <label class="checkbox-compact" title="複数ファイルをまとめて1つの印刷ジョブで連続印刷">
-                    <input type="checkbox" id="print-merge-check" checked>
-                    <span>結合印刷</span>
-                </label>
-                <button type="button" id="refresh-printers-btn" class="btn-icon-mini" title="プリンター再取得">
-                    <i class="fa-solid fa-arrows-rotate"></i>
-                </button>
+                <select id="printer-select" class="select-compact">
+                    <option value="">プリンター取得中...</option>
+                </select>
             </div>
         </div>
     </header>
@@ -54,12 +38,10 @@
         <!-- 1. The Immediate Drop Zone (Visible by default, zero scrollbar needed) -->
         <div id="drop-zone" class="widget-drop-zone">
             <i class="fa-solid fa-cloud-arrow-up drop-icon" id="drop-icon"></i>
-            <div class="drop-text-group">
-                <h2 id="drop-title">PDFをドロップ</h2>
-                <span class="drop-subtitle">または <button type="button" class="btn-select-file" id="file-select-btn">ファイルを選択</button></span>
-            </div>
+            <h2 id="drop-title">PDFをドロップ</h2>
+            <button type="button" class="btn-select-file" id="file-select-btn">ファイルを選択</button>
             <div id="drop-print-badge" class="drop-print-badge hidden">
-                <i class="fa-solid fa-print"></i> 直ちに印刷されます
+                <i class="fa-solid fa-print"></i> 即印刷
             </div>
             <input type="file" id="file-input" multiple accept=".pdf" style="display: none;">
         </div>
