@@ -161,6 +161,37 @@ async def upload_file(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
         
     size = os.path.getsize(temp_path)
+
+    # Support image files: automatically convert JPG, PNG, WebP, BMP to 1-page PDF
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext in ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff'):
+        converted_pdf_path = os.path.join(TEMP_DIR, f"{file_id}_img_converted.pdf")
+        converted_successfully = False
+        try:
+            img_doc = fitz.open(temp_path)
+            pdf_bytes = img_doc.convert_to_pdf()
+            with open(converted_pdf_path, "wb") as f:
+                f.write(pdf_bytes)
+            img_doc.close()
+            converted_successfully = True
+        except Exception:
+            try:
+                img = Image.open(temp_path)
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
+                img.save(converted_pdf_path, "PDF", resolution=100.0)
+                converted_successfully = True
+            except Exception as e_pil:
+                print(f"Image conversion failed: {e_pil}")
+
+        if converted_successfully and os.path.exists(converted_pdf_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+            temp_path = converted_pdf_path
+            size = os.path.getsize(temp_path)
+
     meta_info = get_pdf_metadata_info(temp_path)
     
     item = FileItem(

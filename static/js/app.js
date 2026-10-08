@@ -334,8 +334,10 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let i = 0; i < newFiles.length; i++) {
             const f = newFiles[i];
             const nameLower = f.name.toLowerCase();
-            if (f.type !== 'application/pdf' && !nameLower.endsWith('.pdf')) {
-                alert(`PDFファイルのみ対応しています: ${f.name}`);
+            const validExts = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff'];
+            const isValid = validExts.some(ext => nameLower.endsWith(ext)) || f.type === 'application/pdf' || f.type.startsWith('image/');
+            if (!isValid) {
+                alert(`PDFまたは画像ファイル（JPG, PNG, WebP等）を選択してください: ${f.name}`);
                 continue;
             }
             const uploadedItem = await uploadFile(f);
