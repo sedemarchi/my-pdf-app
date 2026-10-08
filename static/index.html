@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local iLovePDF - 万能ツール</title>
-    <link rel="stylesheet" href="css/style.css?v=8.0">
+    <link rel="stylesheet" href="css/style.css?v=9.0">
     <link rel="icon" type="image/png" href="favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -81,6 +81,13 @@
                         <input type="text" id="output-filename-input" class="input-filename-compact" placeholder="Output..." />
                         <button type="button" id="suggest-name-btn" class="btn-mini btn-outline" title="タイトル再生成"><i class="fa-solid fa-arrows-rotate"></i></button>
                     </div>
+                </div>
+
+                <div class="thumb-zoom-toolbar" id="thumb-zoom-toolbar" title="サムネイル拡大・表示切替">
+                    <button type="button" id="btn-thumb-smaller" class="btn-mini btn-outline" title="サムネイルを縮小"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+                    <input type="range" id="thumb-size-slider" min="90" max="280" value="145" step="5" class="slider-thumb-size" title="サムネイルサイズ調整" />
+                    <button type="button" id="btn-thumb-larger" class="btn-mini btn-outline" title="サムネイルを拡大"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+                    <button type="button" id="btn-toggle-grid" class="btn-mini btn-outline active-grid" title="グリッド展開 ⇄ 1行スクロール切替"><i class="fa-solid fa-table-cells-large"></i></button>
                 </div>
 
                 <div class="toolbar-right">
@@ -199,6 +206,6 @@
     </main>
 
     <div id="toast-container" class="toast-container"></div>
-    <script src="js/app.js?v=8.0"></script>
+    <script src="js/app.js?v=9.0"></script>
 </body>
 </html>

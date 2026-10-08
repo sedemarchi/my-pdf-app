@@ -24,6 +24,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnAssembleMerge = document.getElementById('btn-assemble-merge');
     const btnAssemblePrint = document.getElementById('btn-assemble-print');
     const btnResultBack = document.getElementById('btn-result-back');
+    const thumbSizeSlider = document.getElementById('thumb-size-slider');
+    const btnThumbSmaller = document.getElementById('btn-thumb-smaller');
+    const btnThumbLarger = document.getElementById('btn-thumb-larger');
+    const btnToggleGrid = document.getElementById('btn-toggle-grid');
 
     // Quick Auto-Print Panel Elements
     const quickPrintPanel = document.getElementById('quick-print-panel');
@@ -242,6 +246,73 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial printer fetch
     fetchPrinters();
+
+    // ==========================================
+    // Thumbnail Zoom & Grid Layout Controls
+    // ==========================================
+    function setThumbnailSize(size) {
+        size = Math.max(90, Math.min(280, parseInt(size, 10) || 145));
+        document.documentElement.style.setProperty('--card-width', `${size}px`);
+        const thumbH = Math.round(size * 0.85);
+        document.documentElement.style.setProperty('--thumb-height', `${thumbH}px`);
+        if (thumbSizeSlider) thumbSizeSlider.value = size;
+        localStorage.setItem('localpdf_thumb_size', size);
+    }
+
+    function setGridMode(isGrid) {
+        if (!pageThumbnailCanvas) return;
+        if (isGrid) {
+            pageThumbnailCanvas.classList.remove('strip-mode');
+        } else {
+            pageThumbnailCanvas.classList.add('strip-mode');
+        }
+        if (btnToggleGrid) {
+            btnToggleGrid.classList.toggle('active-grid', isGrid);
+            btnToggleGrid.title = isGrid 
+                ? '表示切替: 現在グリッド展開中（クリックで1行スクロールへ）' 
+                : '表示切替: 現在1行スクロール中（クリックでグリッド展開へ）';
+            btnToggleGrid.innerHTML = isGrid 
+                ? '<i class="fa-solid fa-table-cells-large"></i>' 
+                : '<i class="fa-solid fa-arrows-left-right"></i>';
+        }
+        localStorage.setItem('localpdf_grid_mode', isGrid ? 'true' : 'false');
+    }
+
+    const savedThumbSize = localStorage.getItem('localpdf_thumb_size');
+    if (savedThumbSize) {
+        setThumbnailSize(savedThumbSize);
+    } else {
+        setThumbnailSize(145);
+    }
+
+    const savedGridMode = localStorage.getItem('localpdf_grid_mode');
+    // Default to true (grid mode) so it immediately fills the expanded block in Google Sites!
+    const isGrid = (savedGridMode === null || savedGridMode === 'true');
+    setGridMode(isGrid);
+
+    if (thumbSizeSlider) {
+        thumbSizeSlider.addEventListener('input', (e) => {
+            setThumbnailSize(e.target.value);
+        });
+    }
+    if (btnThumbSmaller) {
+        btnThumbSmaller.addEventListener('click', () => {
+            const cur = parseInt(thumbSizeSlider ? thumbSizeSlider.value : 145, 10);
+            setThumbnailSize(cur - 20);
+        });
+    }
+    if (btnThumbLarger) {
+        btnThumbLarger.addEventListener('click', () => {
+            const cur = parseInt(thumbSizeSlider ? thumbSizeSlider.value : 145, 10);
+            setThumbnailSize(cur + 20);
+        });
+    }
+    if (btnToggleGrid) {
+        btnToggleGrid.addEventListener('click', () => {
+            const curGrid = !pageThumbnailCanvas.classList.contains('strip-mode');
+            setGridMode(!curGrid);
+        });
+    }
 
 
 

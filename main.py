@@ -228,8 +228,8 @@ async def upload_file(file: UploadFile = File(...)):
             for p_idx in range(len(doc)):
                 try:
                     p = doc[p_idx]
-                    pix = p.get_pixmap(dpi=50) # fast 50 DPI thumbnail
-                    img_bytes = pix.tobytes("jpeg", jpg_quality=70)
+                    pix = p.get_pixmap(dpi=100) # Crisp 100 DPI thumbnail for expandable view
+                    img_bytes = pix.tobytes("jpeg", jpg_quality=82)
                     b64_str = "data:image/jpeg;base64," + base64.b64encode(img_bytes).decode("utf-8")
                     pages_list.append(PageItem(
                         page_id=f"{file_id}_p{p_idx}",
@@ -1382,8 +1382,8 @@ def init_app():
                     for p_idx in range(len(doc)):
                         try:
                             p = doc[p_idx]
-                            pix = p.get_pixmap(dpi=50)
-                            img_bytes = pix.tobytes("jpeg", jpg_quality=70)
+                            pix = p.get_pixmap(dpi=100)
+                            img_bytes = pix.tobytes("jpeg", jpg_quality=82)
                             b64_str = "data:image/jpeg;base64," + base64.b64encode(img_bytes).decode("utf-8")
                             pages_list.append(PageItem(
                                 page_id=f"{file_id}_p{p_idx}",

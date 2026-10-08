@@ -7,6 +7,8 @@
     --text-muted: #64748b;
     --border-color: #e2e8f0;
     --shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    --card-width: 145px;
+    --thumb-height: 125px;
 }
 
 * {
@@ -421,7 +423,7 @@ html, body {
     white-space: nowrap;
 }
 
-/* Output filename (compact inline) */
+/* Output filename (flexible inline) */
 .output-filename-compact {
     display: flex;
     align-items: center;
@@ -431,7 +433,9 @@ html, body {
     padding: 2px 6px;
     border-radius: 6px;
     font-size: 0.75rem;
-    max-width: 170px;
+    max-width: 320px;
+    flex: 1;
+    min-width: 120px;
 }
 .output-filename-compact i {
     color: #8b5cf6;
@@ -444,8 +448,31 @@ html, body {
     outline: none;
     font-weight: 600;
     color: var(--text-main);
-    width: 100px;
-    min-width: 60px;
+    width: 100%;
+    min-width: 80px;
+}
+
+/* Thumbnail Zoom Toolbar */
+.thumb-zoom-toolbar {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: #f8fafc;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1px 4px;
+    flex-shrink: 0;
+}
+.slider-thumb-size {
+    width: 65px;
+    height: 4px;
+    accent-color: var(--primary-red);
+    cursor: pointer;
+}
+#btn-toggle-grid.active-grid {
+    background: #eff6ff;
+    border-color: #3b82f6;
+    color: #2563eb;
 }
 
 /* Direct Action Buttons */
@@ -533,27 +560,36 @@ html, body {
     border-color: #ef4444;
 }
 
-/* Horizontal Page Thumbnail Canvas */
+/* Flexible / Grid Page Thumbnail Canvas (Adapts to expanded block width) */
 .page-thumbnail-canvas {
     display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 4px 2px 6px 2px;
-    align-items: stretch;
+    flex-wrap: wrap; /* default wrap into grid to fill expanded block! */
+    gap: 10px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 6px 4px 10px 4px;
+    align-content: flex-start;
     flex: 1;
-    min-height: 120px;
+    min-height: 140px;
+    transition: all 0.2s ease;
 }
 
-/* Individual Page Thumbnail Card */
+.page-thumbnail-canvas.strip-mode {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    align-items: stretch;
+}
+
+/* Individual Page Thumbnail Card - Scales with --card-width */
 .page-card {
-    min-width: 88px;
-    width: 88px;
-    max-width: 95px;
+    min-width: var(--card-width, 145px);
+    width: var(--card-width, 145px);
+    max-width: var(--card-width, 145px);
     background: white;
     border: 1.2px solid var(--border-color);
-    border-radius: 7px;
-    padding: 3px;
+    border-radius: 8px;
+    padding: 4px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -615,12 +651,12 @@ html, body {
     color: #ef4444;
 }
 
-/* Thumbnail wrapper */
+/* Thumbnail wrapper - Scales with --thumb-height */
 .page-thumb-wrapper {
     width: 100%;
-    height: 70px;
+    height: var(--thumb-height, 125px);
     background: #f8fafc;
-    border-radius: 4px;
+    border-radius: 5px;
     border: 1px solid #f1f5f9;
     display: flex;
     align-items: center;
@@ -628,12 +664,14 @@ html, body {
     overflow: hidden;
     position: relative;
     cursor: zoom-in;
+    transition: height 0.15s ease;
 }
 .page-thumb-img {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
     transition: transform 0.2s ease;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.06));
 }
 
 /* Card footer controls */
@@ -665,23 +703,24 @@ html, body {
 }
 
 .page-source-info {
-    font-size: 0.54rem;
+    font-size: 0.58rem;
     color: #94a3b8;
-    max-width: 82px;
+    max-width: calc(var(--card-width, 145px) - 8px);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-top: 2px;
+    margin-top: 3px;
     text-align: center;
 }
 
 /* Add / Insert Page Card at End */
 .page-card-add {
-    min-width: 78px;
-    width: 78px;
+    min-width: var(--card-width, 145px);
+    width: var(--card-width, 145px);
+    height: calc(var(--thumb-height, 125px) + 58px);
     border: 1.5px dashed #cbd5e1;
     background: #fafafa;
-    border-radius: 7px;
+    border-radius: 8px;
     display: flex;
     flex-direction: column;
     align-items: center;
