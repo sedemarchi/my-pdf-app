@@ -554,6 +554,40 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Blank Page Thumbnail (Vector SVG preview)
+    function getBlankPageThumbnail() {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400" viewBox="0 0 300 400">
+            <rect width="100%" height="100%" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+            <rect x="24" y="24" width="252" height="352" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2" stroke-dasharray="6,6" rx="6"/>
+            <g fill="#94a3b8" text-anchor="middle" dominant-baseline="middle">
+                <circle cx="150" cy="165" r="30" fill="#e2e8f0"/>
+                <path d="M138 165 h24 M150 153 v24" stroke="#64748b" stroke-width="3" stroke-linecap="round"/>
+                <text x="150" y="222" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="18" font-weight="700" fill="#475569">空白ページ</text>
+                <text x="150" y="248" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="12" fill="#94a3b8">BLANK PAGE</text>
+            </g>
+        </svg>`;
+        return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    }
+
+    // Insert Blank Page
+    function insertBlankPage(atIndex = pages.length) {
+        const blankId = 'blank_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        const newBlank = {
+            page_id: blankId,
+            file_id: '__blank__',
+            page_index: -1,
+            page_num: 0,
+            thumbnail: getBlankPageThumbnail(),
+            source_name: '空白ページ (白紙)',
+            rotation: 0,
+            is_blank: true
+        };
+        const insertIdx = Math.max(0, Math.min(atIndex, pages.length));
+        pages.splice(insertIdx, 0, newBlank);
+        renderPageCards();
+        showToast(`空白ページを挿入しました (#${insertIdx + 1})`, "info", 2000);
+    }
+
     // Render Page Thumbnail Workbench Cards
     function renderPageCards() {
         if (pages.length === 0) {
@@ -576,6 +610,9 @@ document.addEventListener('DOMContentLoaded', () => {
         pages.forEach((page, idx) => {
             const card = document.createElement('div');
             card.className = 'page-card';
+            if (page.is_blank || page.file_id === '__blank__') {
+                card.classList.add('page-card-blank');
+            }
             card.draggable = true;
             card.dataset.index = idx;
 
@@ -587,9 +624,12 @@ document.addEventListener('DOMContentLoaded', () => {
             card.innerHTML = `
                 <div class="page-card-header">
                     <span class="page-seq-badge">#${idx + 1}</span>
-                    <button type="button" class="btn-page-delete" title="このページを削除"><i class="fa-solid fa-xmark"></i></button>
+                    <div class="page-card-actions-top">
+                        <button type="button" class="btn-page-add-blank" title="この後ろに空白ページを挿入"><i class="fa-solid fa-file-circle-plus"></i></button>
+                        <button type="button" class="btn-page-delete" title="このページを削除"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
                 </div>
-                <div class="page-thumb-wrapper" title="クリックで拡大表示">
+                <div class="page-thumb-wrapper" title="${page.is_blank ? '空白ページ（白紙）' : 'クリックで拡大表示'}">
                     ${thumbContent}
                 </div>
                 <div class="page-card-footer">
@@ -597,10 +637,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button type="button" class="btn-page-rotate" title="90度回転"><i class="fa-solid fa-rotate-right"></i></button>
                     <button type="button" class="btn-page-move-right" ${idx === pages.length - 1 ? 'disabled style="opacity:0.35;cursor:default;"' : ''} title="右へ移動"><i class="fa-solid fa-chevron-right"></i></button>
                 </div>
-                <div class="page-source-info" title="${page.source_name} (p.${page.page_index + 1})">
+                <div class="page-source-info" title="${page.source_name} ${page.page_index >= 0 ? `(p.${page.page_index + 1})` : ''}">
                     ${page.source_name}
                 </div>
             `;
+
+            // Insert blank immediately after this card
+            const btnAddBlank = card.querySelector('.btn-page-add-blank');
+            if (btnAddBlank) {
+                btnAddBlank.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    insertBlankPage(idx + 1);
+                });
+            }
 
             // Delete listener
             card.querySelector('.btn-page-delete').addEventListener('click', (e) => {
@@ -635,6 +684,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Thumbnail Zoom Modal
             card.querySelector('.page-thumb-wrapper').addEventListener('click', (e) => {
                 e.stopPropagation();
+                if (page.is_blank || page.file_id === '__blank__') {
+                    showToast("空白ページ（白紙）です", "info", 1500);
+                    return;
+                }
                 const matchedFile = files.find(f => f.id === page.file_id);
                 if (matchedFile) {
                     openPreviewModalForPage(matchedFile, page.page_index + 1);
@@ -684,16 +737,27 @@ document.addEventListener('DOMContentLoaded', () => {
         const addCard = document.createElement('div');
         addCard.className = 'page-card-add';
         addCard.id = 'card-insert-page';
-        addCard.title = 'クリックまたはPDF/画像をドロップしてページを追加';
+        addCard.title = 'クリックして空白ページを挿入（ファイル追加も可能）';
         addCard.innerHTML = `
             <div class="add-card-content">
-                <i class="fa-solid fa-plus-circle add-card-icon"></i>
-                <span class="add-card-text">ページ挿入</span>
+                <div class="btn-insert-blank-action" title="空白（白紙）ページを挿入">
+                    <i class="fa-solid fa-file-circle-plus add-card-icon"></i>
+                    <span class="add-card-text">空白ページ挿入</span>
+                </div>
+                <button type="button" class="btn-insert-file" title="PDFまたは画像ファイルを選択して追加">
+                    <i class="fa-solid fa-folder-plus"></i>
+                    <span>ファイル追加</span>
+                </button>
             </div>
         `;
 
-        addCard.addEventListener('click', () => {
-            fileInput.click();
+        addCard.addEventListener('click', (e) => {
+            const fileBtn = e.target.closest('.btn-insert-file');
+            if (fileBtn) {
+                fileInput.click();
+            } else {
+                insertBlankPage();
+            }
         });
 
         addCard.addEventListener('dragover', (e) => {
@@ -726,27 +790,30 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         try {
-            const uniqueFileIds = [...new Set(pages.map(p => p.file_id))];
-            const res = await fetch('/api/suggest-filename', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    file_ids: uniqueFileIds,
-                    operation: 'merge_compress'
-                })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                if (data.suggested_filename) {
-                    outputFilenameInput.value = data.suggested_filename;
-                    return;
+            const uniqueFileIds = [...new Set(pages.filter(p => p.file_id !== '__blank__').map(p => p.file_id))];
+            if (uniqueFileIds.length > 0) {
+                const res = await fetch('/api/suggest-filename', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_ids: uniqueFileIds,
+                        operation: 'merge_compress'
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.suggested_filename) {
+                        outputFilenameInput.value = data.suggested_filename;
+                        return;
+                    }
                 }
             }
         } catch (e) {
             console.warn("Failed to suggest filename", e);
         }
 
-        const firstName = pages[0].source_name.replace(/\.[^/.]+$/, "");
+        const validPage = pages.find(p => p.file_id !== '__blank__') || pages[0];
+        const firstName = (validPage && validPage.source_name ? validPage.source_name : 'Document').replace(/\.[^/.]+$/, "");
         outputFilenameInput.value = `${firstName}_COMP.pdf`;
     }
 
@@ -975,7 +1042,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 pages: pages.map(p => ({
                     file_id: p.file_id,
                     page_index: p.page_index,
-                    rotation: p.rotation || 0
+                    rotation: p.rotation || 0,
+                    is_blank: !!p.is_blank || p.file_id === '__blank__'
                 })),
                 operation: operation,
                 output_filename: customFilename,

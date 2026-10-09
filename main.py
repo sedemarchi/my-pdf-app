@@ -47,6 +47,7 @@ class PageSpec(BaseModel):
     file_id: str
     page_index: int
     rotation: Optional[int] = 0
+    is_blank: Optional[bool] = False
 
 class AssembleRequest(BaseModel):
     pages: List[PageSpec]
@@ -1129,6 +1130,8 @@ async def assemble_pages(request: AssembleRequest):
     source_items = []
     try:
         for p in request.pages:
+            if p.file_id == "__blank__" or p.is_blank:
+                continue
             if p.file_id not in session_files:
                 raise HTTPException(status_code=404, detail=f"ファイルが見つかりません (ID: {p.file_id})")
             if p.file_id not in opened_docs:
@@ -1141,6 +1144,21 @@ async def assemble_pages(request: AssembleRequest):
         # 2. Assemble new document
         assembled_doc = fitz.open()
         for p in request.pages:
+            if p.file_id == "__blank__" or p.is_blank:
+                # 空白ページ作成 (直前ページ、または既存ドキュメントのサイズを継承。なければA4: 595.32 x 841.92)
+                if len(assembled_doc) > 0:
+                    ref_p = assembled_doc[-1]
+                    w, h = ref_p.rect.width, ref_p.rect.height
+                elif opened_docs:
+                    first_doc = next(iter(opened_docs.values()))
+                    w, h = first_doc[0].rect.width, first_doc[0].rect.height
+                else:
+                    w, h = 595.32, 841.92
+                new_p = assembled_doc.new_page(width=w, height=h)
+                if p.rotation and (p.rotation % 360) != 0:
+                    new_p.set_rotation((new_p.rotation + p.rotation) % 360)
+                continue
+
             src_doc = opened_docs[p.file_id]
             if p.page_index < 0 or p.page_index >= len(src_doc):
                 continue

@@ -648,6 +648,30 @@ html, body {
     border-radius: 3px;
     line-height: 1.2;
 }
+.page-card-actions-top {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+.btn-page-add-blank {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 0.72rem;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    padding: 0;
+}
+.btn-page-add-blank:hover {
+    background: #e0f2fe;
+    color: #0284c7;
+}
 .btn-page-delete {
     background: none;
     border: none;
@@ -666,6 +690,12 @@ html, body {
 .btn-page-delete:hover {
     background: #fee2e2;
     color: #ef4444;
+}
+
+.page-card.page-card-blank {
+    border-style: dashed;
+    border-color: #94a3b8;
+    background: #ffffff;
 }
 
 /* Thumbnail wrapper - Proportionally fills card width with 16:11 slide ratio */
@@ -748,11 +778,11 @@ html, body {
     align-self: stretch;
     box-sizing: border-box;
     transition: all 0.2s;
+    padding: 8px 4px;
 }
 .page-card-add:hover, .page-card-add.drag-over {
     border-color: var(--primary-red);
     background: #fff5f5;
-    color: var(--primary-red);
 }
 
 .strip-mode .page-card-add {
@@ -767,19 +797,51 @@ html, body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 3px;
-    color: #64748b;
+    justify-content: center;
+    width: 100%;
+    gap: 8px;
 }
-.page-card-add:hover .add-card-content {
+.btn-insert-blank-action {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: #475569;
+    padding: 6px 10px;
+    border-radius: 6px;
+    transition: all 0.15s;
+    cursor: pointer;
+}
+.page-card-add:hover .btn-insert-blank-action {
     color: var(--primary-red);
 }
-.add-card-icon {
-    font-size: 1.2rem;
+.btn-insert-blank-action .add-card-icon {
+    font-size: 1.6rem;
 }
-.add-card-text {
+.btn-insert-blank-action .add-card-text {
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.btn-insert-file {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    color: #64748b;
     font-size: 0.62rem;
     font-weight: 600;
-    white-space: nowrap;
+    padding: 3px 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+.btn-insert-file:hover {
+    background: #f1f5f9;
+    color: var(--text-main);
+    border-color: #94a3b8;
 }
 
 .btn-result-back {
