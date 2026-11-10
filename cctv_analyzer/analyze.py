@@ -17,6 +17,7 @@
     python analyze.py cam1.mp4 --start "2026-11-10 08:00:00"
     python analyze.py cam1.mp4 --roi "0.1,0.5;0.6,0.5;0.6,1;0.1,1" --loiter 30
     python analyze.py cam1.mp4 --line "0.5,0;0.5,1"
+    python analyze.py road.mp4 --line "北側:0,0.5;1,0.5" --line "南側:0,0.8;1,0.8" --bin 15
 
 座標はすべて画面に対する割合（左上 0,0 ／ 右下 1,1）で指定します。
 """
@@ -47,9 +48,20 @@ JA_LABELS = {
     "person": "人", "bicycle": "自転車", "car": "車", "motorcycle": "バイク",
     "bus": "バス", "truck": "トラック", "cat": "猫", "dog": "犬", "bird": "鳥",
     "backpack": "リュック", "handbag": "ハンドバッグ", "suitcase": "スーツケース",
-    "umbrella": "傘",
+    "umbrella": "傘", "rider": "運転者（自転車・バイク）",
 }
 DEFAULT_CLASSES = "person,bicycle,car,motorcycle,bus,truck,cat,dog"
+
+# 交通量調査の区分（通過カウント用）
+COUNT_CATS = [
+    ("歩行者", ("person",)),
+    ("自転車", ("bicycle",)),
+    ("二輪車", ("motorcycle",)),
+    ("小型車", ("car",)),
+    ("大型車", ("bus", "truck")),
+]
+CLS_TO_CAT = {c: name for name, cs in COUNT_CATS for c in cs}
+RIDE_CLASSES = ("bicycle", "motorcycle")
 
 # 描画色（BGR）
 COLORS = {
@@ -82,6 +94,19 @@ def parse_points(text: str | None) -> list[tuple[float, float]] | None:
 TS_PATTERN = re.compile(
     r"(20\d{2})[-_.]?(\d{2})[-_.]?(\d{2})[ _T.-]?(\d{2})[-_:.]?(\d{2})[-_:.]?(\d{2})"
 )
+
+
+def parse_lines(items: list[str] | None) -> list[tuple[str, tuple]]:
+    """--line の指定（"名前:x1,y1;x2,y2" または "x1,y1;x2,y2"）を [(名前, (a, b))] にする。"""
+    out = []
+    for i, text in enumerate(items or [], 1):
+        name, _, coords = text.rpartition(":")
+        name = name.strip() or (f"ライン{i}" if len(items) > 1 else "ライン")
+        pts = parse_points(coords)
+        if not pts or len(pts) != 2:
+            raise ValueError(f"--line は 2 点（始点;終点）で指定してください: {text}")
+        out.append((name, (pts[0], pts[1])))
+    return out
 
 
 def guess_start_time(path: Path) -> datetime | None:
@@ -123,9 +148,10 @@ class Track:
     roi_time: float = 0.0
     last_in_roi_t: float | None = None
     loiter_flag: bool = False
-    crossings: list = field(default_factory=list)  # (t, "A→B" / "B→A")
-    side: int = 0                 # 線のどちら側にいるか（確定値）
-    anchor: tuple | None = None   # 側が確定した最後の位置
+    crossings: list = field(default_factory=list)  # (t, ライン名, "上→下" など)
+    side: dict = field(default_factory=dict)       # ライン名 → どちら側にいるか（確定値）
+    anchor: dict = field(default_factory=dict)     # ライン名 → 側が確定した最後の位置
+    rider_hits: int = 0           # 自転車・バイクと重なっていた回数（運転者判定用）
     cls_votes: Counter = field(default_factory=Counter)
 
     @property
@@ -195,9 +221,7 @@ class VideoAnalyzer:
 
         roi = parse_points(args.roi)
         roi_px = np.array([[x * W, y * H] for x, y in roi], np.int32) if roi else None
-        line = parse_points(args.line)
-        if line and len(line) != 2:
-            raise ValueError("--line は 2 点（始点;終点）で指定してください")
+        lines = parse_lines(args.line)
 
         out_dir.mkdir(parents=True, exist_ok=True)
         snap_dir = out_dir / "snapshots"
@@ -283,8 +307,16 @@ class VideoAnalyzer:
             if dets:
                 last_active_t = t
 
+            # --- 自転車・バイクに乗っている人の判定（歩行者と二重に数えないため）---
+            ride_boxes = [d[0] for d in dets if d[2] in RIDE_CLASSES]
+            riding = set()
+            if ride_boxes:
+                for k, (box, _, cname, _) in enumerate(dets):
+                    if cname == "person" and any(is_riding(box, rb) for rb in ride_boxes):
+                        riding.add(k)
+
             # --- 追跡情報の更新 ---
-            for box, conf, cname, tid in dets:
+            for k, (box, conf, cname, tid) in enumerate(dets):
                 if tid is None:
                     continue
                 x1, y1, x2, y2 = box
@@ -294,6 +326,8 @@ class VideoAnalyzer:
                     tr = Track(tid=tid, cls=cname, first_t=t, last_t=t, first_frame=idx)
                     tracks[tid] = tr
                 tr.cls_votes[cname] += 1
+                if k in riding:
+                    tr.rider_hits += 1
                 tr.last_t = t
                 tr.hits += 1
                 if not tr.path or t - tr.path[-1][0] >= 0.5:
@@ -318,22 +352,22 @@ class VideoAnalyzer:
                         if tr.roi_time >= args.loiter:
                             tr.loiter_flag = True
 
-                if line:
+                for lname, (a, b) in lines:
                     # ふらつきで何度も数えないよう、線から一定距離（margin）離れて初めて「側」を確定
-                    a, b = line
                     d = line_dist(foot, a, b)
                     if abs(d) >= args.line_margin:
                         s_now = 1 if d > 0 else -1
-                        if tr.side and s_now != tr.side and tr.anchor is not None \
-                                and segments_intersect(tr.anchor, foot, a, b):
-                            tr.crossings.append((t, crossing_label(tr.anchor, foot, a, b)))
-                        tr.side = s_now
-                        tr.anchor = foot
+                        prev = tr.side.get(lname, 0)
+                        anc = tr.anchor.get(lname)
+                        if prev and s_now != prev and anc is not None and segments_intersect(anc, foot, a, b):
+                            tr.crossings.append((t, lname, crossing_label(anc, foot, a, b)))
+                        tr.side[lname] = s_now
+                        tr.anchor[lname] = foot
 
             # --- ダイジェスト動画 ---
             active = bool(dets) or moving
             if args.digest:
-                annotated = draw_frame(frame, dets, t, start_dt, roi_px, line, W, H)
+                annotated = draw_frame(frame, dets, t, start_dt, roi_px, lines, W, H)
                 if writer is None:
                     writer = cv2.VideoWriter(str(digest_tmp), cv2.VideoWriter_fourcc(*"mp4v"), eff_fps, (W, H))
                 if bool(dets):
@@ -365,9 +399,29 @@ class VideoAnalyzer:
         for tr in sorted(tracks.values(), key=lambda x: x.first_t):
             if tr.cls_votes:
                 tr.cls = tr.cls_votes.most_common(1)[0][0]
+            if tr.cls == "person" and tr.rider_hits >= max(2, 0.4 * tr.hits):
+                tr.cls = "rider"   # 自転車・バイクの運転者（乗り物の方で数える）
             if tr.duration < args.min_duration or tr.hits < args.min_hits:
                 continue
             events.append(tr)
+
+        # --- 通過カウント（交通量調査形式）---
+        # 速く通り過ぎる車も数えたいので、イベントの最短時間ではなく検出 2 回以上で判定
+        cross_list = []
+        for tr in tracks.values():
+            if tr.hits < 2 or tr.cls not in CLS_TO_CAT:
+                continue
+            for tt, lname, d in tr.crossings:
+                cross_list.append((tt, lname, d, CLS_TO_CAT[tr.cls]))
+        cross_list.sort()
+        count_rows = build_count_table(cross_list, lines, duration_hint=(total / fps if total else None),
+                                       bin_min=args.bin, start_dt=start_dt)
+        if lines:
+            with open(out_dir / "counts.csv", "w", newline="", encoding="utf-8-sig") as f:
+                cols = ["時間帯（開始）", "時間帯（終了）", "ライン", "方向"] + [c for c, _ in COUNT_CATS] + ["合計"]
+                w = csv.DictWriter(f, fieldnames=cols)
+                w.writeheader()
+                w.writerows(count_rows)
 
         # 同一物体の ID の付け直しなどで連番を振り直す
         rows = []
@@ -392,7 +446,7 @@ class VideoAnalyzer:
                 "in_roi": "" if roi is None else ("はい" if tr.roi_first_t is not None else "いいえ"),
                 "roi_sec": "" if roi is None else round(tr.roi_time, 1),
                 "loitering": "" if roi is None else ("はい" if tr.loiter_flag else ""),
-                "line_cross": " / ".join(f"{d}@{fmt_sec(tt)}" for tt, d in tr.crossings),
+                "line_cross": " / ".join((f"{ln} " if len(lines) > 1 else "") + f"{d}@{fmt_sec(tt)}" for tt, ln, d in tr.crossings),
                 "snapshot": snap_name or "",
             }
             rows.append(row)
@@ -428,10 +482,9 @@ class VideoAnalyzer:
 
         # --- 集計 ---
         counts = Counter(r["class"] for r in rows)
-        crossings = Counter()
-        for tr in events:
-            for _, d in tr.crossings:
-                crossings[(tr.cls, d)] += 1
+        totals = Counter()
+        for _, lname, d, cat in cross_list:
+            totals[(lname, d, cat)] += 1
 
         summary = {
             "video": video_path.name,
@@ -449,19 +502,71 @@ class VideoAnalyzer:
             "counts": dict(counts),
             "loitering": sum(1 for tr in events if tr.loiter_flag),
             "roi_entries": sum(1 for tr in events if tr.roi_first_t is not None) if roi else None,
-            "line_crossings": {f"{c}:{d}": n for (c, d), n in crossings.items()},
+            "line_counts": {f"{ln}|{d}|{cat}": n for (ln, d, cat), n in sorted(totals.items())},
+            "count_table": count_rows,
             "motion_per_minute": {int(k): round(v / max(1, eff_fps * 60), 5) for k, v in sorted(motion_per_bucket.items())},
             "digest": digest_name,
             "roi": roi,
-            "line": line,
+            "lines": [{"name": n, "points": [a, b]} for n, (a, b) in lines] or None,
         }
         (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
         # ROI・ラインの確認用に 1 枚目のフレームを保存
-        save_layout_preview(video_path, out_dir / "layout.jpg", roi_px, line)
+        save_layout_preview(video_path, out_dir / "layout.jpg", roi_px, lines)
 
         write_report(out_dir / "report.html", summary, rows, start_dt, duration, args)
         return {"summary": summary, "rows": rows, "out_dir": out_dir}
+
+
+def is_riding(pbox, vbox) -> bool:
+    """人の枠が自転車・バイクの枠と大きく重なっていれば「乗っている」とみなす。"""
+    ix1, iy1 = max(pbox[0], vbox[0]), max(pbox[1], vbox[1])
+    ix2, iy2 = min(pbox[2], vbox[2]), min(pbox[3], vbox[3])
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    parea = max(1e-6, (pbox[2] - pbox[0]) * (pbox[3] - pbox[1]))
+    varea = max(1e-6, (vbox[2] - vbox[0]) * (vbox[3] - vbox[1]))
+    return inter / min(parea, varea) >= 0.3
+
+
+def build_count_table(cross_list, lines, duration_hint, bin_min, start_dt):
+    """通過を「時間帯 × ライン × 方向」で区分別に集計した行を作る。"""
+    if not lines:
+        return []
+    dur = duration_hint or (cross_list[-1][0] if cross_list else 0)
+    step = bin_min * 60 if bin_min and bin_min > 0 else max(dur, 1)
+    # 時刻が分かっていれば時計の区切り（例: 15 分ちょうど）に合わせる
+    offset = 0.0
+    if start_dt and bin_min:
+        sec_of_day = start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second
+        offset = sec_of_day % step
+    nb = max(1, int((dur + offset) // step) + (1 if (dur + offset) % step else 0))
+    dirs = defaultdict(set)
+    for _, ln, d, _ in cross_list:
+        dirs[ln].add(d)
+    for ln, (a, b) in lines:
+        if not dirs[ln]:
+            dirs[ln] = {"上→下", "下→上"} if abs(b[0] - a[0]) >= abs(b[1] - a[1]) else {"左→右", "右→左"}
+    table = defaultdict(Counter)
+    for tt, ln, d, cat in cross_list:
+        table[(int((tt + offset) // step), ln, d)][cat] += 1
+
+    def label(sec):
+        sec = max(0.0, min(sec, dur))
+        fmt = "%Y-%m-%d %H:%M" if step >= 60 and offset == int(offset) else "%Y-%m-%d %H:%M:%S"
+        return (start_dt + timedelta(seconds=sec)).strftime(fmt) if start_dt else fmt_sec(sec)
+
+    rows = []
+    for bi in range(nb):
+        t0, t1 = bi * step - offset, (bi + 1) * step - offset
+        for ln, _ in lines:
+            for d in sorted(dirs[ln]):
+                c = table[(bi, ln, d)]
+                row = {"時間帯（開始）": label(t0), "時間帯（終了）": label(t1), "ライン": ln, "方向": d}
+                for cat, _ in COUNT_CATS:
+                    row[cat] = c[cat]
+                row["合計"] = sum(c.values())
+                rows.append(row)
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -492,17 +597,19 @@ def crop_jpeg(frame, box, cname, conf) -> bytes:
     return buf.tobytes() if ok else b""
 
 
-def draw_frame(frame, dets, t, start_dt, roi_px, line, W, H, stamp=True):
+def draw_frame(frame, dets, t, start_dt, roi_px, lines, W, H, stamp=True):
     img = frame.copy()
     if roi_px is not None:
         overlay = img.copy()
         cv2.fillPoly(overlay, [roi_px], (0, 200, 255))
         img = cv2.addWeighted(overlay, 0.15, img, 0.85, 0)
         cv2.polylines(img, [roi_px], True, (0, 200, 255), 2)
-    if line:
-        a = (int(line[0][0] * W), int(line[0][1] * H))
-        b = (int(line[1][0] * W), int(line[1][1] * H))
+    for lname, (la, lb) in lines or []:
+        a = (int(la[0] * W), int(la[1] * H))
+        b = (int(lb[0] * W), int(lb[1] * H))
         cv2.line(img, a, b, (255, 0, 255), 2)
+        if len(lines) > 1 and lname.isascii():
+            cv2.putText(img, lname, (a[0] + 4, a[1] - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
     th = max(1, int(round(min(W, H) / 400)))
     for box, conf, cname, tid in dets:
         x1, y1, x2, y2 = map(int, box)
@@ -521,14 +628,14 @@ def draw_frame(frame, dets, t, start_dt, roi_px, line, W, H, stamp=True):
     return img
 
 
-def save_layout_preview(video_path, dest, roi_px, line):
+def save_layout_preview(video_path, dest, roi_px, lines):
     cap = cv2.VideoCapture(str(video_path))
     ok, frame = cap.read()
     cap.release()
     if not ok:
         return
     H, W = frame.shape[:2]
-    img = draw_frame(frame, [], 0, None, roi_px, line, W, H, stamp=False)
+    img = draw_frame(frame, [], 0, None, roi_px, lines, W, H, stamp=False)
     # 位置合わせ用の 10% グリッド
     for i in range(1, 10):
         x, y = int(W * i / 10), int(H * i / 10)
@@ -577,6 +684,7 @@ th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;verti
 video{width:100%;max-height:520px;background:#000;border-radius:10px}.grid2{display:grid;grid-template-columns:1fr;gap:12px}
 .filter{margin:6px 0 10px;display:flex;flex-wrap:wrap;gap:6px}.filter button{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:99px;padding:3px 12px;cursor:pointer;font:inherit;font-size:13px}
 .filter button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.num{text-align:right;font-variant-numeric:tabular-nums}table.cnt td,table.cnt th{white-space:nowrap}
 """
 
 
@@ -589,9 +697,32 @@ def write_report(dest: Path, summary: dict, rows: list[dict], start_dt, duration
     if summary.get("roi_entries") is not None:
         cards.append(f'<div class="card"><span class="mut">エリア侵入</span><b>{summary["roi_entries"]}</b></div>')
         cards.append(f'<div class="card warn"><span class="mut">うろつき（{args.loiter:g}秒以上）</span><b>{summary["loitering"]}</b></div>')
-    for k, n in summary.get("line_crossings", {}).items():
-        cls, d = k.split(":")
-        cards.append(f'<div class="card"><span class="mut">ライン通過 {e(JA_LABELS.get(cls, cls))}（{e(d)}）</span><b>{n}</b></div>')
+    count_html = ""
+    if summary.get("lines"):
+        ct = summary.get("count_table") or []
+        cats = [c for c, _ in COUNT_CATS]
+        # 全時間の合計（ライン × 方向）
+        agg = {}
+        for r in ct:
+            key = (r["ライン"], r["方向"])
+            a = agg.setdefault(key, Counter())
+            for c in cats + ["合計"]:
+                a[c] += r[c]
+        hdr = "<tr><th>ライン</th><th>方向</th>" + "".join(f"<th class=num>{c}</th>" for c in cats) + "<th class=num>合計</th></tr>"
+        body = "".join(
+            f"<tr><td>{e(ln)}</td><td>{e(d)}</td>" + "".join(f"<td class=num>{a[c]}</td>" for c in cats)
+            + f"<td class=num><b>{a['合計']}</b></td></tr>" for (ln, d), a in agg.items())
+        count_html = (f'<h2>通過台数・人数 <span class="mut">（ラインを越えた数）</span></h2>'
+                      f'<div class="tbl"><table class="cnt">{hdr}{body}</table></div>')
+        bins = sorted({(r["時間帯（開始）"], r["時間帯（終了）"]) for r in ct})
+        if len(bins) > 1:
+            hdr2 = "<tr><th>時間帯</th><th>ライン</th><th>方向</th>" + "".join(f"<th class=num>{c}</th>" for c in cats) + "<th class=num>合計</th></tr>"
+            body2 = "".join(
+                f"<tr><td>{e(r['時間帯（開始）'].split(' ')[-1])}〜{e(r['時間帯（終了）'].split(' ')[-1])}</td><td>{e(r['ライン'])}</td><td>{e(r['方向'])}</td>"
+                + "".join(f"<td class=num>{r[c]}</td>" for c in cats) + f"<td class=num><b>{r['合計']}</b></td></tr>" for r in ct)
+            count_html += (f'<h2>時間帯別の通過数 <span class="mut">（{args.bin:g}分ごと）</span></h2>'
+                           f'<div class="tbl"><table class="cnt">{hdr2}{body2}</table></div>')
+        count_html += '<p class="mut">区分: 小型車＝乗用車など、大型車＝バス・トラック、二輪車＝バイク。自転車・バイクに乗っている人は歩行者に含めません。</p>'
 
     # 時間帯ヒストグラム（時刻が分かれば 1 時間ごと、なければ動画内の時間で 20 分割）
     hist_html = ""
@@ -642,7 +773,7 @@ def write_report(dest: Path, summary: dict, rows: list[dict], start_dt, duration
 
     # イベント表
     has_roi = summary.get("roi") is not None
-    has_line = summary.get("line") is not None
+    has_line = bool(summary.get("lines"))
     head = "<tr><th>No</th><th>画像</th><th>種類</th><th>時刻</th><th>映っていた時間</th><th>信頼度</th>"
     if has_roi:
         head += "<th>エリア</th>"
@@ -681,7 +812,7 @@ def write_report(dest: Path, summary: dict, rows: list[dict], start_dt, duration
 <h1>防犯カメラ解析レポート</h1>
 <div class="mut">{e(summary["video"])} ／ 録画時間 {summary["duration"]} ／ 開始 {e(start_txt)} ／ {summary["resolution"]} {summary["fps"]}fps ／ 解析時間 {fmt_sec(summary["processing_sec"])}</div>
 <div class="cards">{"".join(cards)}</div>
-{video_html}{hist_html}{tl_html}{table}
+{count_html}{video_html}{hist_html}{tl_html}{table}
 <p class="mut" style="margin-top:24px">自動検出の結果です。見逃し・誤検出がありえるため、重要な場面は元の録画で確認してください。<br>
 条件: 信頼度 {args.conf} 以上 ／ {args.min_duration:g} 秒以上映ったもの ／ 解析 {summary["analysis_fps"]} fps ／ 動き検知のしきい値 {args.motion}</p>
 </main><script>
@@ -747,7 +878,8 @@ def build_parser():
     ap.add_argument("--min-hits", type=int, default=3, help="最低検出回数（既定 3）")
     ap.add_argument("--roi", help='監視エリア（多角形）"x,y;x,y;x,y;..."（0〜1 の割合）')
     ap.add_argument("--loiter", type=float, default=30, help="監視エリアにこの秒数以上いたら「うろつき」（既定 30）")
-    ap.add_argument("--line", help='通過カウント用の線 "x1,y1;x2,y2"（0〜1 の割合）')
+    ap.add_argument("--line", action="append", help='通過カウント用の線 "x1,y1;x2,y2"（0〜1 の割合）。"名前:x1,y1;x2,y2" で名前付き、複数指定可')
+    ap.add_argument("--bin", type=float, default=15, help="通過数を何分ごとに集計するか（既定 15）")
     ap.add_argument("--pad", type=float, default=2, help="ダイジェストで検出の前後に何秒残すか（既定 2）")
     ap.add_argument("--line-margin", type=float, default=0.02, help=argparse.SUPPRESS)
     ap.add_argument("--no-digest", dest="digest", action="store_false", help="ダイジェスト動画を作らない（速くなる）")
@@ -814,9 +946,15 @@ def main(argv=None):
         extra = ""
         if s.get("roi_entries") is not None:
             extra += f" ／ エリア侵入 {s['roi_entries']}（うろつき {s['loitering']}）"
-        if s.get("line_crossings"):
-            extra += " ／ 通過 " + "、".join(f"{k} {n}" for k, n in s["line_crossings"].items())
         print(f"  {s['video']}（{s['duration']}）: {s['event_count']} 件 — {cnt}{extra}")
+        if s.get("lines"):
+            agg = defaultdict(Counter)
+            for k, n in s["line_counts"].items():
+                ln, d, cat = k.split("|")
+                agg[(ln, d)][cat] += n
+            for (ln, d), c in agg.items():
+                parts = "、".join(f"{cat} {c[cat]}" for cat, _ in COUNT_CATS if c[cat])
+                print(f"    通過 {ln} {d}: {parts or '0'}（計 {sum(c.values())}）")
         print(f"    レポート: {(res['out_dir'] / 'report.html').resolve()}")
     if len(results) > 1:
         print(f"  一覧: {(out_root / 'index.html').resolve()}")
