@@ -472,22 +472,22 @@ def crop_jpeg(frame, box, cname, conf) -> bytes:
     H, W = frame.shape[:2]
     x1, y1, x2, y2 = box
     bw, bh = x2 - x1, y2 - y1
-    pad = 0.25
-    cx1 = int(max(0, x1 - bw * pad)); cy1 = int(max(0, y1 - bh * pad))
-    cx2 = int(min(W, x2 + bw * pad)); cy2 = int(min(H, y2 + bh * pad))
+    # 周囲も少し写す（遠くの小さな対象ほど広めに）
+    px = max(bw * 0.25, 12); py = max(bh * 0.2, 12)
+    cx1 = int(max(0, x1 - px)); cy1 = int(max(0, y1 - py))
+    cx2 = int(min(W, x2 + px)); cy2 = int(min(H, y2 + py))
     crop = frame[cy1:cy2, cx1:cx2].copy()
     if crop.size == 0:
         crop = frame.copy()
         cx1 = cy1 = 0
-    cv2.rectangle(crop, (int(x1 - cx1), int(y1 - cy1)), (int(x2 - cx1), int(y2 - cy1)), COLORS.get(cname, (0, 255, 255)), 2)
-    # 小さすぎる切り抜きは拡大、大きすぎるものは縮小
+    # 小さすぎる切り抜きは拡大、大きすぎるものは縮小（枠は拡大後に細線で描く）
     h, w = crop.shape[:2]
-    target = 240
-    scale = target / max(h, 1)
-    scale = min(scale, 4.0)
+    scale = min(240 / max(h, 1), 4.0)
     if scale != 1:
         crop = cv2.resize(crop, (max(1, int(w * scale)), max(1, int(h * scale))),
                           interpolation=cv2.INTER_CUBIC if scale > 1 else cv2.INTER_AREA)
+    cv2.rectangle(crop, (int((x1 - cx1) * scale), int((y1 - cy1) * scale)),
+                  (int((x2 - cx1) * scale), int((y2 - cy1) * scale)), COLORS.get(cname, (0, 255, 255)), 2)
     ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
     return buf.tobytes() if ok else b""
 
