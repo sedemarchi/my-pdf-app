@@ -3,3 +3,6 @@ __pycache__/
 temp/
 .venv/
 .DS_Store
+
+cctv_results/
+*.pt
